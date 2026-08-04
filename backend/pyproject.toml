@@ -1,0 +1,14 @@
+[project]
+name = "specwrite"
+version = "0.1.0"
+description = "Read/write .docx flexible-packaging specs as a live, folder-backed vault."
+requires-python = ">=3.11"
+dependencies = [
+    "python-docx>=1.1.0",
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+    "watchdog>=4.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

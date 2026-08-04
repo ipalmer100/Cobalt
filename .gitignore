@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+backend/.venv/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+
+# Real spec documents are customer data — never commit these.
+# (synthetic fixtures used by the test suite are generated at test time,
+# see backend/tests/fixtures/builder.py)
+*.docx
+*.doc
+local_fixtures/

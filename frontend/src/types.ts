@@ -1,0 +1,53 @@
+export interface VaultEntry {
+  path: string;
+  supported: boolean;
+  error: string | null;
+  spec_number: string | null;
+  customer: string | null;
+  revision_number: string | null;
+  warnings: string[];
+}
+
+export interface VaultResponse {
+  root: string;
+  entries: VaultEntry[];
+}
+
+export interface SpecSection {
+  shape: "records" | "fields";
+  location: string;
+  header_row: string[] | null;
+  rows: string[][];
+  fields: Record<string, string> | null;
+}
+
+export interface SpecDetail {
+  file_path: string;
+  spec_number: string;
+  customer: string;
+  revision_number: string;
+  sections: Record<string, SpecSection>;
+  warnings: string[];
+}
+
+export interface ViewRowSource {
+  section: string;
+  kind: "record" | "field";
+  row: number;
+  header_row: string[] | null;
+}
+
+export interface ViewRow {
+  [column: string]: unknown;
+  _source: ViewRowSource;
+}
+
+export interface ViewResponse {
+  section: string;
+  rows: ViewRow[];
+}
+
+export interface ViewsListResponse {
+  views: string[];
+  readonly_columns: string[];
+}
