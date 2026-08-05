@@ -111,9 +111,12 @@ class Vault:
             self._index_one(file_path)
 
     def _walk(self):
-        for path in Path(self.root).rglob("*"):
+        root = Path(self.root)
+        for path in root.rglob("*"):
             if not path.is_file():
                 continue
+            if any(part.startswith(".") for part in path.relative_to(root).parts):
+                continue  # skip .specwrite/ (audit log) and any other dotfolder
             if _is_hidden_or_lock_file(path.name):
                 continue
             if not _is_spec_file(path.name):

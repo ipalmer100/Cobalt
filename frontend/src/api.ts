@@ -1,4 +1,4 @@
-import type { SpecDetail, VaultResponse, ViewResponse, ViewsListResponse } from "./types";
+import type { AuditLogResponse, SpecDetail, VaultResponse, ViewResponse, ViewsListResponse } from "./types";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -37,17 +37,17 @@ export function getView(section: string) {
   return request<ViewResponse>(`/views/${encodeURIComponent(section)}`);
 }
 
-export function writeCell(path: string, section: string, row: number, col: number, value: string) {
+export function writeCell(path: string, section: string, row: number, col: number, value: string, who: string) {
   return request<{ ok: boolean }>("/spec/cell", {
     method: "PUT",
-    body: JSON.stringify({ path, section, row, col, value }),
+    body: JSON.stringify({ path, section, row, col, value, who }),
   });
 }
 
-export function writeField(path: string, section: string, label: string, value: string) {
+export function writeField(path: string, section: string, label: string, value: string, who: string) {
   return request<{ ok: boolean }>("/spec/field", {
     method: "PUT",
-    body: JSON.stringify({ path, section, label, value }),
+    body: JSON.stringify({ path, section, label, value, who }),
   });
 }
 
@@ -77,6 +77,10 @@ export function createBlankSpec(destPath: string, specNumber: string, customer: 
     method: "POST",
     body: JSON.stringify({ dest_path: destPath, spec_number: specNumber, customer, who }),
   });
+}
+
+export function getAuditLog(limit = 200) {
+  return request<AuditLogResponse>(`/audit-log?limit=${limit}`);
 }
 
 export function connectLiveUpdates(onChanged: (path: string) => void): () => void {

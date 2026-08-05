@@ -4,10 +4,13 @@ import Sidebar from "./components/Sidebar";
 import SpecDetail from "./components/SpecDetail";
 import MassEditGrid from "./components/MassEditGrid";
 import NewSpecModal from "./components/NewSpecModal";
+import AuditLogView from "./components/AuditLogView";
 import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
 import "./App.css";
 
-type Mode = "detail" | "mass-edit";
+type Mode = "detail" | "mass-edit" | "audit-log";
+
+const WHO_STORAGE_KEY = "specwrite.who";
 
 export default function App() {
   const [root, setRoot] = useState("");
@@ -23,6 +26,12 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const [showNewSpec, setShowNewSpec] = useState(false);
+  const [who, setWho] = useState(() => localStorage.getItem(WHO_STORAGE_KEY) ?? "");
+
+  function updateWho(value: string) {
+    setWho(value);
+    localStorage.setItem(WHO_STORAGE_KEY, value);
+  }
 
   async function refreshVaultList() {
     try {
@@ -107,6 +116,7 @@ export default function App() {
         <NewSpecModal
           root={root}
           entries={entries}
+          defaultWho={who}
           onClose={() => setShowNewSpec(false)}
           onCreated={(path) => {
             setShowNewSpec(false);
@@ -124,6 +134,9 @@ export default function App() {
           <button className={mode === "mass-edit" ? "active" : ""} onClick={() => setMode("mass-edit")}>
             Mass Edit
           </button>
+          <button className={mode === "audit-log" ? "active" : ""} onClick={() => setMode("audit-log")}>
+            Audit Log
+          </button>
           {mode === "mass-edit" && (
             <select value={selectedView} onChange={(e) => setSelectedView(e.target.value)}>
               {views.map((v) => (
@@ -134,18 +147,26 @@ export default function App() {
               ))}
             </select>
           )}
+          <input
+            className="who-input"
+            placeholder="Your name (for the audit log)"
+            value={who}
+            onChange={(e) => updateWho(e.target.value)}
+          />
         </div>
 
         {error && <div className="error banner">{error}</div>}
 
         {mode === "detail" &&
           (spec ? (
-            <SpecDetail spec={spec} onChanged={() => setRefreshToken((t) => t + 1)} />
+            <SpecDetail spec={spec} onChanged={() => setRefreshToken((t) => t + 1)} defaultWho={who} />
           ) : (
             <div className="empty-state">Select a spec from the sidebar.</div>
           ))}
 
-        {mode === "mass-edit" && <MassEditGrid section={selectedView} refreshToken={refreshToken} />}
+        {mode === "mass-edit" && <MassEditGrid section={selectedView} refreshToken={refreshToken} who={who} />}
+
+        {mode === "audit-log" && <AuditLogView refreshToken={refreshToken} />}
       </div>
     </div>
   );

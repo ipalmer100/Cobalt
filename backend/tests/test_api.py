@@ -238,3 +238,80 @@ def test_apply_revision_still_works_despite_lock(client, tmp_path):
     r = client.post("/spec/revision", json={"path": path, "who": "Isaac", "revision_text": "Fine."})
     assert r.status_code == 200
     assert r.json()["revision_number"] == "02"
+
+
+def test_audit_log_records_cell_write_with_before_and_after(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path, spec_number="SW0001")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.put(
+        "/spec/cell",
+        json={
+            "path": path,
+            "section": "Bill of Materials",
+            "row": 1,
+            "col": 2,
+            "value": "New Supplier",
+            "who": "Isaac",
+        },
+    )
+    assert r.status_code == 200
+
+    r = client.get("/audit-log")
+    entries = r.json()["entries"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["action"] == "write_cell"
+    assert entry["who"] == "Isaac"
+    assert entry["spec_number"] == "SW0001"
+    assert entry["old_value"] == "Flex Films"
+    assert entry["new_value"] == "New Supplier"
+
+
+def test_audit_log_records_revision_and_creation_actions(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path, spec_number="SW0001", revision="01")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    client.post("/spec/revision", json={"path": path, "who": "Isaac", "revision_text": "Bumped."})
+    client.post(
+        "/spec/duplicate",
+        json={
+            "source_path": path,
+            "dest_path": str(tmp_path / "new_spec.docx"),
+            "spec_number": "SW0099",
+            "customer": "New Co",
+            "who": "Isaac",
+        },
+    )
+
+    r = client.get("/audit-log")
+    actions = [e["action"] for e in r.json()["entries"]]
+    # most recent first
+    assert actions == ["duplicate_spec", "apply_revision"]
+
+
+def test_audit_log_write_does_not_touch_docx_and_is_excluded_from_vault(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    client.put(
+        "/spec/cell",
+        json={"path": path, "section": "Bill of Materials", "row": 1, "col": 2, "value": "X", "who": "Isaac"},
+    )
+
+    assert (tmp_path / ".specwrite" / "audit_log.jsonl").exists()
+
+    # the log file must never show up as a vault entry alongside the real spec
+    r = client.get("/vault")
+    entries = r.json()["entries"]
+    assert len(entries) == 1
+    assert entries[0]["path"] == path
+
+
+def test_audit_log_empty_before_any_writes(client, tmp_path):
+    client.post("/vault/open", json={"root": str(tmp_path)})
+    r = client.get("/audit-log")
+    assert r.json()["entries"] == []

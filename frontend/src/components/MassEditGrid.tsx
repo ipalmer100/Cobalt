@@ -5,6 +5,7 @@ import type { ViewRow } from "../types";
 interface Props {
   section: string;
   refreshToken: number;
+  who: string;
 }
 
 const META_PREFIX = ["Spec Number", "Customer"];
@@ -34,7 +35,7 @@ function columnsFor(rows: ViewRow[]): string[] {
   return [...META_PREFIX, ...data, ...trailing];
 }
 
-export default function MassEditGrid({ section, refreshToken }: Props) {
+export default function MassEditGrid({ section, refreshToken, who }: Props) {
   const [rows, setRows] = useState<ViewRow[]>([]);
   const [editable, setEditable] = useState(true);
   const [readonlyColumns, setReadonlyColumns] = useState<string[]>([]);
@@ -64,7 +65,8 @@ export default function MassEditGrid({ section, refreshToken }: Props) {
 
   const columns = useMemo(() => columnsFor(rows), [rows]);
 
-  async function commitEdit(row: ViewRow, column: string, value: string) {
+  async function commitEdit(rowIndex: number, column: string, value: string) {
+    const row = rows[rowIndex];
     const filePath = row["File Path"] as string;
     const source = row._source;
     const key = `${filePath}:${source.section}:${source.row}:${column}`;
@@ -73,11 +75,19 @@ export default function MassEditGrid({ section, refreshToken }: Props) {
       if (source.kind === "record") {
         const colIndex = source.header_row?.indexOf(column) ?? -1;
         if (colIndex < 0) throw new Error(`Column "${column}" not found in source table`);
-        await writeCell(filePath, source.section, source.row, colIndex, value);
+        await writeCell(filePath, source.section, source.row, colIndex, value, who);
       } else {
-        await writeField(filePath, source.section, column, value);
+        await writeField(filePath, source.section, column, value, who);
       }
-      await load();
+      // Patch just this one cell instead of refetching + re-rendering the
+      // whole view -- at a few thousand rows, a full reload after every
+      // single edit is the actual bottleneck (seconds), not the write
+      // itself (well under 200ms). We already know exactly what changed.
+      setRows((prev) => {
+        const next = [...prev];
+        next[rowIndex] = { ...next[rowIndex], [column]: value };
+        return next;
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -125,7 +135,7 @@ export default function MassEditGrid({ section, refreshToken }: Props) {
                     <input
                       defaultValue={value}
                       onBlur={(e) => {
-                        if (e.target.value !== value) commitEdit(row, col, e.target.value);
+                        if (e.target.value !== value) commitEdit(i, col, e.target.value);
                       }}
                     />
                   </td>

@@ -18,6 +18,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from .audit_log import append_entry, read_entries
 from .doc_conversion import ConversionError, convert_doc_to_docx
 from .creation import CreationError, create_blank_spec, duplicate_spec
 from .docx_sections import PRODUCT_DESCRIPTION, ALL_SECTIONS
@@ -84,6 +85,37 @@ def _require_not_revision_locked(section: str, label: str | None = None) -> None
         raise HTTPException(status_code=422, detail=_REVISION_LOCK_MESSAGE)
 
 
+def _spec_number_for(vault: Vault, path: str) -> str | None:
+    entry = vault.get(path)
+    return entry.spec.spec_number if entry and entry.spec else None
+
+
+def _current_cell_value(vault: Vault, path: str, section: str, row: int, col: int) -> str | None:
+    """Best-effort lookup of a cell's value before it's overwritten, using
+    the vault's already-parsed in-memory copy (no extra disk read)."""
+    entry = vault.get(path)
+    if not entry or not entry.spec:
+        return None
+    table = entry.spec.tables.get(section)
+    if not table or row >= len(table.rows) or col >= len(table.rows[row]):
+        return None
+    return table.rows[row][col]
+
+
+def _current_field_value(vault: Vault, path: str, section: str, label: str) -> str | None:
+    entry = vault.get(path)
+    if not entry or not entry.spec:
+        return None
+    table = entry.spec.tables.get(section)
+    if not table:
+        return None
+    target = label.strip().rstrip(":").strip().lower()
+    for key, value in table.fields().items():
+        if key.strip().rstrip(":").strip().lower() == target:
+            return value
+    return None
+
+
 def _broadcast(path: str) -> None:
     loop = _state["loop"]
     if loop is None:
@@ -109,6 +141,7 @@ class WriteCellRequest(BaseModel):
     row: int
     col: int
     value: str
+    who: str = ""
 
 
 class WriteFieldRequest(BaseModel):
@@ -116,12 +149,14 @@ class WriteFieldRequest(BaseModel):
     section: str
     label: str
     value: str
+    who: str = ""
 
 
 class AppendRowRequest(BaseModel):
     path: str
     section: str
     values: list[str]
+    who: str = ""
 
 
 class ReviseRequest(BaseModel):
@@ -219,11 +254,24 @@ def get_view(section: str) -> dict:
 def put_cell(req: WriteCellRequest) -> dict:
     vault = _vault()
     _require_not_revision_locked(req.section)
+    old_value = _current_cell_value(vault, req.path, req.section, req.row, req.col)
     try:
         write_cell(req.path, req.section, req.row, req.col, req.value)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.path)
+    append_entry(
+        vault.root,
+        "write_cell",
+        req.who,
+        file_path=req.path,
+        spec_number=_spec_number_for(vault, req.path),
+        section=req.section,
+        row=req.row,
+        col=req.col,
+        old_value=old_value,
+        new_value=req.value,
+    )
     return {"ok": True}
 
 
@@ -231,6 +279,7 @@ def put_cell(req: WriteCellRequest) -> dict:
 def put_field(req: WriteFieldRequest) -> dict:
     vault = _vault()
     _require_not_revision_locked(req.section, req.label)
+    old_value = _current_field_value(vault, req.path, req.section, req.label)
     try:
         found = write_field_value(req.path, req.section, req.label, req.value)
     except ValueError as exc:
@@ -238,6 +287,17 @@ def put_field(req: WriteFieldRequest) -> dict:
     if not found:
         raise HTTPException(status_code=404, detail=f"Field not found: {req.label}")
     vault.refresh(req.path)
+    append_entry(
+        vault.root,
+        "write_field",
+        req.who,
+        file_path=req.path,
+        spec_number=_spec_number_for(vault, req.path),
+        section=req.section,
+        label=req.label,
+        old_value=old_value,
+        new_value=req.value,
+    )
     return {"ok": True}
 
 
@@ -250,6 +310,15 @@ def post_row(req: AppendRowRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.path)
+    append_entry(
+        vault.root,
+        "append_row",
+        req.who,
+        file_path=req.path,
+        spec_number=_spec_number_for(vault, req.path),
+        section=req.section,
+        values=req.values,
+    )
     return {"ok": True}
 
 
@@ -261,6 +330,15 @@ def post_revision(req: ReviseRequest) -> dict:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.path)
+    append_entry(
+        vault.root,
+        "apply_revision",
+        req.who,
+        file_path=req.path,
+        spec_number=_spec_number_for(vault, req.path),
+        revision_number=new_rev,
+        revision_text=req.revision_text,
+    )
     return {"ok": True, "revision_number": new_rev}
 
 
@@ -278,11 +356,16 @@ def post_convert_doc(req: ConvertDocRequest) -> dict:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(new_path)
     entry = vault.get(new_path)
-    return {
-        "ok": True,
-        "path": new_path,
-        "spec_number": entry.spec.spec_number if entry and entry.spec else None,
-    }
+    spec_number = entry.spec.spec_number if entry and entry.spec else None
+    append_entry(
+        vault.root,
+        "convert_doc",
+        "",
+        source_path=req.path,
+        new_path=new_path,
+        spec_number=spec_number,
+    )
+    return {"ok": True, "path": new_path, "spec_number": spec_number}
 
 
 @app.post("/spec/duplicate")
@@ -295,6 +378,15 @@ def post_duplicate_spec(req: DuplicateSpecRequest) -> dict:
     except CreationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.dest_path)
+    append_entry(
+        vault.root,
+        "duplicate_spec",
+        req.who,
+        source_path=req.source_path,
+        dest_path=req.dest_path,
+        spec_number=spec.spec_number,
+        customer=req.customer,
+    )
     return {"ok": True, "path": req.dest_path, "spec_number": spec.spec_number}
 
 
@@ -307,7 +399,21 @@ def post_create_blank_spec(req: CreateBlankSpecRequest) -> dict:
     except CreationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.dest_path)
+    append_entry(
+        vault.root,
+        "create_blank_spec",
+        req.who,
+        dest_path=req.dest_path,
+        spec_number=spec.spec_number,
+        customer=req.customer,
+    )
     return {"ok": True, "path": req.dest_path, "spec_number": spec.spec_number}
+
+
+@app.get("/audit-log")
+def get_audit_log(limit: int = 200) -> dict:
+    vault = _vault()
+    return {"entries": read_entries(vault.root, limit=limit)}
 
 
 @app.websocket("/ws")

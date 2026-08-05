@@ -5,10 +5,11 @@ import type { SpecDetail as SpecDetailType } from "../types";
 interface Props {
   spec: SpecDetailType;
   onChanged: () => void;
+  defaultWho: string;
 }
 
-export default function SpecDetail({ spec, onChanged }: Props) {
-  const [who, setWho] = useState("");
+export default function SpecDetail({ spec, onChanged, defaultWho }: Props) {
+  const [who, setWho] = useState(defaultWho);
   const [revisionText, setRevisionText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

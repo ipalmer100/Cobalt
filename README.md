@@ -41,9 +41,21 @@ Information, etc.) instead of opening one Word document at a time.
   — a synthetic placeholder with no real branding; swap in a real blank
   Toppan master template by regenerating via
   `scripts/build_blank_template.py` or replacing the file directly).
+- **`backend/specwrite/audit_log.py`** — a second, independent change log,
+  entirely separate from Revision History. Every write the app makes
+  (mass-edit cell/field, row add, revision, conversion, new spec) is
+  appended as one JSON line to `<vault_root>/.specwrite/audit_log.jsonl`
+  — never into a `.docx`. Lives inside the vault (Obsidian's `.obsidian/`
+  convention) so it travels with the folder and is shared by anyone who
+  opens it. `GET /audit-log` reads it back; the frontend's "Audit Log"
+  tab shows it as a table (time, who, spec, what changed).
 - **`frontend/`** — a small React/Vite shell: sidebar file list with a
   "New Spec" action and a convert-to-.docx link on legacy `.doc` entries,
-  a read-only Spec Detail view, and the tabular Mass Edit grid.
+  a read-only Spec Detail view, the tabular Mass Edit grid, and the
+  Audit Log tab. A "Your name" field in the top bar (persisted in
+  `localStorage`) is attached to every write for the audit log's "who" —
+  there's no login system, so this is a per-browser display name, not
+  authentication.
 
 ### Revision History is deliberately manual, and deliberately locked
 
@@ -110,6 +122,46 @@ cd backend
 python scripts/validate_real_specs.py /path/to/spec1.docx /path/to/spec2.docx
 ```
 
+## Performance
+
+Measured against copies of real spec files (not the tiny synthetic test
+fixture), on this dev container's hardware — treat as directional, not a
+guarantee of your deployment target, but the shape of the numbers should
+hold:
+
+| Operation | 50 files | 200 files | 1000 files |
+|---|---|---|---|
+| Cold vault open (parse everything) | 2.4s | 10.4s | 53.0s |
+| Single cell edit, round trip | 161ms | 183ms | 162ms |
+| Cross-vault Bill of Materials view, server-side build | 13ms | 7ms | 82ms |
+
+Two things worth knowing:
+
+- **Editing is fast regardless of vault size.** A single cell write only
+  ever re-parses the one file that changed, not the whole vault, so it
+  stays around 150–200ms whether the vault has 50 files or 1000. This
+  used to *not* be true in the frontend specifically — the Mass Edit
+  grid was refetching and re-rendering the entire view after every
+  single edit, which took 3+ seconds on a 1650-row grid even though the
+  write itself was ~180ms. Fixed by patching just the edited cell in
+  local state instead of reloading the whole table; verified in a real
+  browser that a single edit against a 1650-row grid now takes ~0.35s
+  (was ~3.3s).
+- **Opening a very large vault for the first time is a real, linear
+  cost** (~50ms/file to parse) — 200 files is an ~11 second wait, 1000
+  files is closer to a minute. That's a one-time cost per session (not
+  per edit), but if real customer vaults run into the hundreds of files
+  opened all at once, it's worth knowing about before relying on this
+  day-to-day. Fixes if it matters in practice: index in the background
+  and populate the sidebar incrementally instead of blocking on the
+  full scan, or parallelize parsing across files (parsing is CPU-bound
+  and currently single-threaded).
+
+For a realistic single-customer or single-product-line folder (tens of
+files), none of this is noticeable — everything above is snappy well
+under a second. It only becomes a real wait at the scale of a full
+multi-hundred-file archive opened as one vault.
+
 ## Known limitations (v1 scaffold)
 
 - One row in Slitting Information sometimes stacks two labels
@@ -129,3 +181,6 @@ python scripts/validate_real_specs.py /path/to/spec1.docx /path/to/spec2.docx
   if multiple admins need concurrent access).
 - No conflict handling if two people edit the same file at once, or if a
   file changes on disk mid-write.
+- The audit log's "who" is a free-text name typed into the browser, not
+  an authenticated identity — fine as a change record, not sufficient on
+  its own if compliance ever requires provable attribution.

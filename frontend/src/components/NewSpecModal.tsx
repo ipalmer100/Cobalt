@@ -7,6 +7,7 @@ interface Props {
   entries: VaultEntry[];
   onCreated: (path: string) => void;
   onClose: () => void;
+  defaultWho: string;
 }
 
 function dirOf(path: string): string {
@@ -14,13 +15,13 @@ function dirOf(path: string): string {
   return idx >= 0 ? path.slice(0, idx) : path;
 }
 
-export default function NewSpecModal({ root, entries, onCreated, onClose }: Props) {
+export default function NewSpecModal({ root, entries, onCreated, onClose, defaultWho }: Props) {
   const supported = entries.filter((e) => e.supported);
   const [mode, setMode] = useState<"duplicate" | "blank">(supported.length > 0 ? "duplicate" : "blank");
   const [sourcePath, setSourcePath] = useState(supported[0]?.path ?? "");
   const [specNumber, setSpecNumber] = useState("");
   const [customer, setCustomer] = useState("");
-  const [who, setWho] = useState("");
+  const [who, setWho] = useState(defaultWho);
   const [destFolder, setDestFolder] = useState(root);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

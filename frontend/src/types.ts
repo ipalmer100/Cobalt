@@ -58,3 +58,29 @@ export interface ViewsListResponse {
   views: string[];
   views_meta: Record<string, ViewMeta>;
 }
+
+export interface AuditLogEntry {
+  timestamp: string;
+  action: string;
+  who: string;
+  file_path?: string;
+  spec_number?: string | null;
+  section?: string;
+  row?: number;
+  col?: number;
+  label?: string;
+  old_value?: string | null;
+  new_value?: string;
+  values?: string[];
+  revision_number?: string;
+  revision_text?: string;
+  source_path?: string;
+  dest_path?: string;
+  new_path?: string;
+  customer?: string;
+  [key: string]: unknown;
+}
+
+export interface AuditLogResponse {
+  entries: AuditLogEntry[];
+}

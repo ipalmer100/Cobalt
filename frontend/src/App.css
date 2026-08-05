@@ -146,6 +146,29 @@
   border-bottom: 1px solid var(--border);
 }
 
+.who-input {
+  margin-left: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  width: 200px;
+}
+
+.audit-log-view {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+.audit-log-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
 .mode-tabs button {
   padding: 6px 12px;
   border: 1px solid var(--border);
