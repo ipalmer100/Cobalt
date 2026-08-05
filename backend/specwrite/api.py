@@ -20,10 +20,17 @@ from pydantic import BaseModel
 
 from .doc_conversion import ConversionError, convert_doc_to_docx
 from .creation import CreationError, create_blank_spec, duplicate_spec
-from .docx_sections import ALL_SECTIONS
+from .docx_sections import PRODUCT_DESCRIPTION, ALL_SECTIONS
 from .docx_writer import append_row, apply_revision, write_cell, write_field_value
 from .vault import Vault
-from .views import READONLY_COLUMNS, VIEW_NAMES, build_view
+from .views import (
+    REVISION_HISTORY,
+    REVISION_NUMBER_FIELD,
+    VIEW_NAMES,
+    build_view,
+    is_view_editable,
+    readonly_columns_for,
+)
 
 _state: dict[str, Any] = {"vault": None, "loop": None, "sockets": []}
 
@@ -61,6 +68,20 @@ def _require_within_vault(vault: Vault, path: str) -> None:
     root = Path(vault.root)
     if root not in resolved.parents and resolved != root:
         raise HTTPException(status_code=400, detail=f"Path must be inside the open vault ({vault.root})")
+
+
+_REVISION_LOCK_MESSAGE = (
+    "Revision History and Product Description's Revision # can only change together, "
+    "via POST /spec/revision (the \"Add Revision\" action) — this keeps the audit trail "
+    "and the spec's stated revision number from ever drifting apart."
+)
+
+
+def _require_not_revision_locked(section: str, label: str | None = None) -> None:
+    if section == REVISION_HISTORY:
+        raise HTTPException(status_code=422, detail=_REVISION_LOCK_MESSAGE)
+    if section == PRODUCT_DESCRIPTION and label is not None and label.strip().rstrip(":").strip().lower() == REVISION_NUMBER_FIELD.lower():
+        raise HTTPException(status_code=422, detail=_REVISION_LOCK_MESSAGE)
 
 
 def _broadcast(path: str) -> None:
@@ -172,7 +193,13 @@ def get_spec(path: str) -> dict:
 
 @app.get("/views")
 def list_views() -> dict:
-    return {"views": VIEW_NAMES, "readonly_columns": READONLY_COLUMNS}
+    return {
+        "views": VIEW_NAMES,
+        "views_meta": {
+            name: {"editable": is_view_editable(name), "readonly_columns": readonly_columns_for(name)}
+            for name in VIEW_NAMES
+        },
+    }
 
 
 @app.get("/views/{section}")
@@ -180,12 +207,18 @@ def get_view(section: str) -> dict:
     if section not in ALL_SECTIONS:
         raise HTTPException(status_code=404, detail=f"Unknown section: {section}")
     rows = build_view(_vault().entries(), section)
-    return {"section": section, "rows": rows}
+    return {
+        "section": section,
+        "rows": rows,
+        "editable": is_view_editable(section),
+        "readonly_columns": readonly_columns_for(section),
+    }
 
 
 @app.put("/spec/cell")
 def put_cell(req: WriteCellRequest) -> dict:
     vault = _vault()
+    _require_not_revision_locked(req.section)
     try:
         write_cell(req.path, req.section, req.row, req.col, req.value)
     except ValueError as exc:
@@ -197,6 +230,7 @@ def put_cell(req: WriteCellRequest) -> dict:
 @app.put("/spec/field")
 def put_field(req: WriteFieldRequest) -> dict:
     vault = _vault()
+    _require_not_revision_locked(req.section, req.label)
     try:
         found = write_field_value(req.path, req.section, req.label, req.value)
     except ValueError as exc:
@@ -210,6 +244,7 @@ def put_field(req: WriteFieldRequest) -> dict:
 @app.post("/spec/row")
 def post_row(req: AppendRowRequest) -> dict:
     vault = _vault()
+    _require_not_revision_locked(req.section)
     try:
         append_row(req.path, req.section, req.values)
     except ValueError as exc:

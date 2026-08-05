@@ -15,7 +15,8 @@ Information, etc.) instead of opening one Word document at a time.
 - **`backend/specwrite/docx_writer.py`** — writes a spec by cell address
   (row/col or label), preserving the target cell's existing formatting,
   and a composite `apply_revision()` that bumps the header's Revision #
-  and appends a Revision History row in one call.
+  and appends a Revision History row in one call. This is the *only* path
+  that's allowed to touch either of those — see "Revision History" below.
 - **`backend/specwrite/vault.py`** — indexes a folder of specs and
   watches it for changes (`watchdog`), the same "select a folder, it's
   instantly live" model as Obsidian's vault.
@@ -43,6 +44,33 @@ Information, etc.) instead of opening one Word document at a time.
 - **`frontend/`** — a small React/Vite shell: sidebar file list with a
   "New Spec" action and a convert-to-.docx link on legacy `.doc` entries,
   a read-only Spec Detail view, and the tabular Mass Edit grid.
+
+### Revision History is deliberately manual, and deliberately locked
+
+By design, editing data (Mass Edit grid, any field) never touches
+Revision History or bumps Revision # — logging a revision is a separate,
+manual action ("Add Revision" on a spec's detail view, or `POST
+/spec/revision`), matching how the org's compliance process already
+works, and keeping table 11 free of the "changed X to Y" busywork a fully
+automatic log would generate on every keystroke.
+
+What *is* enforced is that Product Description's Revision # and Revision
+History's last row can never drift apart: both endpoints for changing
+either one directly are rejected server-side —
+
+- `PUT /spec/field` refuses to set Product Description's `Revision #`
+  (every other field on that view stays editable — Spec #, Customer,
+  Item, Structure Description, Structure Code, Date of Issue).
+- `PUT /spec/cell` and `POST /spec/row` refuse any write to the
+  `Revision History` section at all.
+
+Both come back as a 422 with a message pointing at `POST
+/spec/revision`, and the Mass Edit grid greys out accordingly (the
+dropdown even tags it "Revision History (read-only)"). The only code
+path that can ever change either value is `apply_revision()`, which
+changes them together, atomically — see `specwrite/views.py`
+(`is_view_editable`, `readonly_columns_for`) and the guard in
+`specwrite/api.py` (`_require_not_revision_locked`).
 
 ## Running it
 

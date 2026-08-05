@@ -4,7 +4,6 @@ import type { ViewRow } from "../types";
 
 interface Props {
   section: string;
-  readonlyColumns: string[];
   refreshToken: number;
 }
 
@@ -35,8 +34,10 @@ function columnsFor(rows: ViewRow[]): string[] {
   return [...META_PREFIX, ...data, ...trailing];
 }
 
-export default function MassEditGrid({ section, readonlyColumns, refreshToken }: Props) {
+export default function MassEditGrid({ section, refreshToken }: Props) {
   const [rows, setRows] = useState<ViewRow[]>([]);
+  const [editable, setEditable] = useState(true);
+  const [readonlyColumns, setReadonlyColumns] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
@@ -47,6 +48,8 @@ export default function MassEditGrid({ section, readonlyColumns, refreshToken }:
     try {
       const res = await getView(section);
       setRows(res.rows);
+      setEditable(res.editable);
+      setReadonlyColumns(res.readonly_columns);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -86,6 +89,12 @@ export default function MassEditGrid({ section, readonlyColumns, refreshToken }:
     <div className="mass-edit-grid">
       {loading && <div className="loading">Loading…</div>}
       {error && <div className="error">{error}</div>}
+      {!editable && (
+        <div className="warnings">
+          Revision History is read-only here — it's the audit trail, so it only changes as a
+          unit (new row + Revision # bump) via "Add Revision" on each spec's detail view.
+        </div>
+      )}
       <table className="records-table editable">
         <thead>
           <tr>
@@ -98,7 +107,7 @@ export default function MassEditGrid({ section, readonlyColumns, refreshToken }:
           {rows.map((row, i) => (
             <tr key={i}>
               {columns.map((col) => {
-                const readOnly = readonlyColumns.includes(col);
+                const readOnly = !editable || readonlyColumns.includes(col);
                 const value = (row[col] as string) ?? "";
                 if (col === "File Path") {
                   return (

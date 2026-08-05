@@ -17,9 +17,33 @@ from .vault import VaultEntry
 
 VIEW_NAMES = [PRODUCT_DESCRIPTION, *[s for s in BODY_SECTIONS if s != "Secondary Approved Materials"]]
 
+REVISION_HISTORY = "Revision History"
+REVISION_NUMBER_FIELD = "Revision #"
+
 # Columns that are metadata/derived, not a real cell in the source table —
 # the frontend renders these read-only rather than trying to write them back.
 READONLY_COLUMNS = ["Spec Number", "Customer", "File Path", "Material Type"]
+
+
+def is_view_editable(section: str) -> bool:
+    """Revision History is the audit trail: it only ever changes as one
+    atomic unit (a new row + Product Description's Revision # bumping
+    together) via apply_revision(). Editing it cell-by-cell in the mass
+    grid could desync the two, or let someone quietly rewrite audit
+    history — so the whole view is read-only here, same rule enforced
+    server-side in the write endpoints."""
+    return section != REVISION_HISTORY
+
+
+def readonly_columns_for(section: str) -> list[str]:
+    """Per-view column locks, layered on top of READONLY_COLUMNS.
+    Revision # is locked specifically in Product Description because it
+    must only ever move in lockstep with a new Revision History row —
+    letting it be edited freely here is exactly what would let table 1
+    and table 11 drift apart."""
+    if section == PRODUCT_DESCRIPTION:
+        return [*READONLY_COLUMNS, REVISION_NUMBER_FIELD]
+    return READONLY_COLUMNS
 
 
 def _rows_for_table(table: ParsedTable) -> list[dict[str, str]]:

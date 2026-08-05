@@ -45,9 +45,16 @@ export interface ViewRow {
 export interface ViewResponse {
   section: string;
   rows: ViewRow[];
+  editable: boolean;
+  readonly_columns: string[];
+}
+
+export interface ViewMeta {
+  editable: boolean;
+  readonly_columns: string[];
 }
 
 export interface ViewsListResponse {
   views: string[];
-  readonly_columns: string[];
+  views_meta: Record<string, ViewMeta>;
 }

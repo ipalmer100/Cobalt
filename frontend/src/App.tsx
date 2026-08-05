@@ -4,7 +4,7 @@ import Sidebar from "./components/Sidebar";
 import SpecDetail from "./components/SpecDetail";
 import MassEditGrid from "./components/MassEditGrid";
 import NewSpecModal from "./components/NewSpecModal";
-import type { SpecDetail as SpecDetailType, VaultEntry } from "./types";
+import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
 import "./App.css";
 
 type Mode = "detail" | "mass-edit";
@@ -17,7 +17,7 @@ export default function App() {
   const [spec, setSpec] = useState<SpecDetailType | null>(null);
   const [mode, setMode] = useState<Mode>("detail");
   const [views, setViews] = useState<string[]>([]);
-  const [readonlyColumns, setReadonlyColumns] = useState<string[]>([]);
+  const [viewsMeta, setViewsMeta] = useState<Record<string, ViewMeta>>({});
   const [selectedView, setSelectedView] = useState<string>("Bill of Materials");
   const [refreshToken, setRefreshToken] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +43,7 @@ export default function App() {
       const viewsRes = await listViews();
       await refreshVaultList();
       setViews(viewsRes.views);
-      setReadonlyColumns(viewsRes.readonly_columns);
+      setViewsMeta(viewsRes.views_meta);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -129,6 +129,7 @@ export default function App() {
               {views.map((v) => (
                 <option key={v} value={v}>
                   {v}
+                  {viewsMeta[v] && !viewsMeta[v].editable ? " (read-only)" : ""}
                 </option>
               ))}
             </select>
@@ -144,9 +145,7 @@ export default function App() {
             <div className="empty-state">Select a spec from the sidebar.</div>
           ))}
 
-        {mode === "mass-edit" && (
-          <MassEditGrid section={selectedView} readonlyColumns={readonlyColumns} refreshToken={refreshToken} />
-        )}
+        {mode === "mass-edit" && <MassEditGrid section={selectedView} refreshToken={refreshToken} />}
       </div>
     </div>
   );

@@ -145,3 +145,96 @@ def test_create_blank_spec_endpoint(client, tmp_path):
 
     r = client.get("/spec", params={"path": dest})
     assert r.json()["customer"] == "Fresh Co"
+
+
+def test_views_list_flags_revision_history_as_not_editable(client, tmp_path):
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.get("/views")
+    meta = r.json()["views_meta"]
+    assert meta["Revision History"]["editable"] is False
+    assert meta["Bill of Materials"]["editable"] is True
+    assert "Revision #" in meta["Product Description"]["readonly_columns"]
+
+
+def test_revision_history_view_is_read_only(client, tmp_path):
+    build_sample_spec_docx(str(tmp_path / "spec1.docx"))
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.get("/views/Revision History")
+    assert r.status_code == 200
+    assert r.json()["editable"] is False
+
+
+def test_cannot_write_cell_into_revision_history(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.put(
+        "/spec/cell",
+        json={"path": path, "section": "Revision History", "row": 1, "col": 3, "value": "Rewritten history"},
+    )
+    assert r.status_code == 422
+    assert "Add Revision" in r.json()["detail"]
+
+    # confirm nothing actually changed on disk
+    r = client.get("/spec", params={"path": path})
+    records = r.json()["sections"]["Revision History"]["rows"]
+    assert records[1][3] == "Spec created."
+
+
+def test_cannot_append_row_to_revision_history(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/row",
+        json={"path": path, "section": "Revision History", "values": ["99", "Someone", "01/01/2099", "Snuck in."]},
+    )
+    assert r.status_code == 422
+    assert "Add Revision" in r.json()["detail"]
+
+
+def test_cannot_write_revision_number_field_directly(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path, revision="06")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.put(
+        "/spec/field",
+        json={"path": path, "section": "Product Description", "label": "Revision #", "value": "99"},
+    )
+    assert r.status_code == 422
+    assert "Add Revision" in r.json()["detail"]
+
+    r = client.get("/spec", params={"path": path})
+    assert r.json()["revision_number"] == "06"
+
+
+def test_other_product_description_fields_remain_editable(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.put(
+        "/spec/field",
+        json={"path": path, "section": "Product Description", "label": "Customer", "value": "Renamed Customer"},
+    )
+    assert r.status_code == 200
+
+    r = client.get("/spec", params={"path": path})
+    assert r.json()["customer"] == "Renamed Customer"
+
+
+def test_apply_revision_still_works_despite_lock(client, tmp_path):
+    """The lock only blocks the generic mass-edit paths -- Add Revision
+    (which changes both atomically) must keep working."""
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path, revision="01")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post("/spec/revision", json={"path": path, "who": "Isaac", "revision_text": "Fine."})
+    assert r.status_code == 200
+    assert r.json()["revision_number"] == "02"
