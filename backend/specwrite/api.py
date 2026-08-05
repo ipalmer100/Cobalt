@@ -22,7 +22,7 @@ from .audit_log import append_entry, read_entries
 from .doc_conversion import ConversionError, convert_doc_to_docx
 from .creation import CreationError, create_blank_spec, duplicate_spec
 from .docx_sections import PRODUCT_DESCRIPTION, ALL_SECTIONS
-from .docx_writer import append_row, apply_revision, write_cell, write_field_value
+from .docx_writer import append_row, apply_revision, write_cell, write_edits_batch, write_field_value
 from .vault import Vault
 from .views import (
     REVISION_HISTORY,
@@ -156,6 +156,21 @@ class AppendRowRequest(BaseModel):
     path: str
     section: str
     values: list[str]
+    who: str = ""
+
+
+class BatchEditItem(BaseModel):
+    path: str
+    section: str
+    kind: str  # "record" or "field"
+    row: int | None = None
+    col: int | None = None
+    label: str | None = None
+    value: str
+
+
+class WriteCellsBatchRequest(BaseModel):
+    edits: list[BatchEditItem]
     who: str = ""
 
 
@@ -320,6 +335,62 @@ def post_row(req: AppendRowRequest) -> dict:
         values=req.values,
     )
     return {"ok": True}
+
+
+@app.put("/spec/cells/batch")
+def put_cells_batch(req: WriteCellsBatchRequest) -> dict:
+    """Apply many edits (the fill-handle drag's write path) in one request.
+    All-or-nothing: if any edit would touch the revision lock, the whole
+    batch is rejected before anything is written. Grouped internally so
+    each file is opened and saved once, not once per cell."""
+    vault = _vault()
+    if not req.edits:
+        return {"ok": True, "count": 0}
+
+    for edit in req.edits:
+        _require_not_revision_locked(edit.section, edit.label)
+
+    old_values: dict[int, str | None] = {}
+    for i, edit in enumerate(req.edits):
+        if edit.kind == "record":
+            old_values[i] = _current_cell_value(vault, edit.path, edit.section, edit.row, edit.col)
+        else:
+            old_values[i] = _current_field_value(vault, edit.path, edit.section, edit.label)
+
+    try:
+        write_edits_batch([e.model_dump() for e in req.edits])
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    touched_paths = sorted({e.path for e in req.edits})
+    for path in touched_paths:
+        vault.refresh(path)
+
+    by_path: dict[str, list[dict]] = {}
+    for i, edit in enumerate(req.edits):
+        by_path.setdefault(edit.path, []).append(
+            {
+                "section": edit.section,
+                "kind": edit.kind,
+                "row": edit.row,
+                "col": edit.col,
+                "label": edit.label,
+                "old_value": old_values[i],
+                "new_value": edit.value,
+            }
+        )
+    for path, path_edits in by_path.items():
+        append_entry(
+            vault.root,
+            "fill_column",
+            req.who,
+            file_path=path,
+            spec_number=_spec_number_for(vault, path),
+            section=path_edits[0]["section"],
+            edits=path_edits,
+        )
+
+    return {"ok": True, "count": len(req.edits)}
 
 
 @app.post("/spec/revision")

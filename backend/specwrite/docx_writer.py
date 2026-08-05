@@ -156,6 +156,36 @@ def append_row(path: str, section: str, values: list[str]) -> None:
     doc.save(path)
 
 
+def write_edits_batch(edits: list[dict]) -> None:
+    """Apply many cell/field writes in one pass, grouped by file so each
+    .docx is opened and saved exactly once no matter how many cells in it
+    changed — the primitive the fill-handle drag needs to feel instant
+    even when it spans hundreds of rows across dozens of files, instead
+    of paying a full parse+serialize round trip per cell.
+
+    Each edit dict: {"path", "section", "kind": "record"|"field",
+    "row", "col", "label", "value"}.
+    """
+    by_path: dict[str, list[dict]] = {}
+    for edit in edits:
+        by_path.setdefault(edit["path"], []).append(edit)
+
+    for path, path_edits in by_path.items():
+        doc = Document(path)
+        table_cache: dict[str, Table] = {}
+        for edit in path_edits:
+            section = edit["section"]
+            table = table_cache.get(section)
+            if table is None:
+                table = _resolve_table(doc, section)
+                table_cache[section] = table
+            if edit["kind"] == "record":
+                write_record_cell(table, edit["row"], edit["col"], edit["value"])
+            else:
+                write_field(table, edit["label"], edit["value"])
+        doc.save(path)
+
+
 def clear_records(path: str, section: str) -> None:
     """Remove every data row from a RECORDS-shape section, keeping only
     the header row. Used when spinning up a new spec (duplicate or blank

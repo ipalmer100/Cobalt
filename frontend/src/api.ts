@@ -1,4 +1,4 @@
-import type { AuditLogResponse, SpecDetail, VaultResponse, ViewResponse, ViewsListResponse } from "./types";
+import type { AuditLogResponse, BatchEditItem, SpecDetail, VaultResponse, ViewResponse, ViewsListResponse } from "./types";
 
 const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
 
@@ -48,6 +48,13 @@ export function writeField(path: string, section: string, label: string, value: 
   return request<{ ok: boolean }>("/spec/field", {
     method: "PUT",
     body: JSON.stringify({ path, section, label, value, who }),
+  });
+}
+
+export function writeCellsBatch(edits: BatchEditItem[], who: string) {
+  return request<{ ok: boolean; count: number }>("/spec/cells/batch", {
+    method: "PUT",
+    body: JSON.stringify({ edits, who }),
   });
 }
 

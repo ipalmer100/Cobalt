@@ -193,11 +193,69 @@
   color: var(--text);
 }
 
-.spec-detail,
-.mass-edit-grid {
+.spec-detail {
   flex: 1;
   overflow: auto;
   padding: 16px 20px;
+}
+
+.mass-edit-grid {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+  min-height: 0;
+}
+
+.grid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.grid-toolbar select {
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.grid-toolbar-reset {
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.grid-row-count {
+  margin-left: auto;
+}
+
+.mass-edit-scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.mass-edit-scroll table.records-table {
+  border: none;
+}
+
+.mass-edit-scroll table.records-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .spec-header {
@@ -252,6 +310,7 @@ table.records-table th {
   background: var(--bg-hover);
   font-weight: 600;
   white-space: pre-line;
+  position: relative;
 }
 
 table.records-table.editable td.saving {
@@ -270,6 +329,183 @@ table.records-table.editable input {
 table.records-table.editable input:focus {
   outline: 1px solid var(--accent);
   background: var(--bg);
+}
+
+.th-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.th-label {
+  cursor: pointer;
+  user-select: none;
+  white-space: pre-line;
+}
+
+.th-label:hover {
+  color: var(--accent);
+}
+
+.th-filter-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+  flex-shrink: 0;
+}
+
+.th-filter-btn.active {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+.filter-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  width: 220px;
+  padding: 8px;
+  font-weight: normal;
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12px;
+}
+
+.filter-menu-search {
+  width: 100%;
+  padding: 5px 7px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.filter-menu-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.filter-menu-actions button {
+  flex: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.filter-menu-list {
+  max-height: 180px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 4px 0;
+}
+
+.filter-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 2px;
+  cursor: pointer;
+  font-weight: normal;
+}
+
+.filter-menu-item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-menu-empty {
+  padding: 8px 2px;
+  color: var(--text-muted);
+}
+
+.filter-menu-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.filter-menu-footer button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.filter-menu-footer button.primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.group-header-row {
+  background: var(--bg-hover);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.group-header-row:hover {
+  background: var(--border);
+}
+
+.group-count {
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+td.active-cell {
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1px;
+}
+
+td.fill-preview {
+  background: rgba(124, 58, 237, 0.12);
+  outline: 1px dashed var(--accent);
+  outline-offset: -1px;
+}
+
+.fill-handle {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 7px;
+  height: 7px;
+  background: var(--accent);
+  border: 1px solid white;
+  cursor: crosshair;
+  z-index: 5;
+}
+
+.fill-source-outline {
+  position: absolute;
+  inset: 0;
+  outline: 1.5px solid var(--accent);
+  outline-offset: -1px;
+  pointer-events: none;
+  z-index: 4;
 }
 
 .fields-grid {

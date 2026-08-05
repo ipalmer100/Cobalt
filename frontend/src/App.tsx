@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { connectLiveUpdates, getSpec, listVault, listViews, openVault } from "./api";
 import Sidebar from "./components/Sidebar";
 import SpecDetail from "./components/SpecDetail";
@@ -60,15 +60,26 @@ export default function App() {
     }
   }
 
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     if (!root) return;
     const disconnect = connectLiveUpdates(() => {
-      // Instant reflect: any change on disk (ours or an external Word edit)
-      // refreshes the file list and whatever is currently open.
-      refreshVaultList();
-      setRefreshToken((t) => t + 1);
+      // A single batch write (e.g. a fill-handle drag spanning several
+      // files) broadcasts one "changed" event per touched file. Reacting
+      // to each individually would refetch the whole current view once
+      // per file even though our own optimistic update already applied --
+      // coalesce a burst into a single refresh instead.
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      debounceTimer.current = setTimeout(() => {
+        refreshVaultList();
+        setRefreshToken((t) => t + 1);
+      }, 150);
     });
-    return disconnect;
+    return () => {
+      disconnect();
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root]);
 

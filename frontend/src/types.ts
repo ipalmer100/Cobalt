@@ -78,9 +78,20 @@ export interface AuditLogEntry {
   dest_path?: string;
   new_path?: string;
   customer?: string;
+  edits?: Array<{ row: number | null; col: number | null; label: string | null; old_value: string | null; new_value: string }>;
   [key: string]: unknown;
 }
 
 export interface AuditLogResponse {
   entries: AuditLogEntry[];
+}
+
+export interface BatchEditItem {
+  path: string;
+  section: string;
+  kind: "record" | "field";
+  row?: number | null;
+  col?: number | null;
+  label?: string | null;
+  value: string;
 }

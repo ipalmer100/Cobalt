@@ -315,3 +315,97 @@ def test_audit_log_empty_before_any_writes(client, tmp_path):
     client.post("/vault/open", json={"root": str(tmp_path)})
     r = client.get("/audit-log")
     assert r.json()["entries"] == []
+
+
+def test_batch_cell_write_spans_multiple_files(client, tmp_path):
+    path_a = str(tmp_path / "a.docx")
+    path_b = str(tmp_path / "b.docx")
+    build_sample_spec_docx(path_a, spec_number="SW0001")
+    build_sample_spec_docx(path_b, spec_number="SW0002")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.put(
+        "/spec/cells/batch",
+        json={
+            "edits": [
+                {"path": path_a, "section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "Fill A"},
+                {"path": path_b, "section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "Fill B"},
+            ],
+            "who": "Isaac",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["count"] == 2
+
+    r = client.get("/spec", params={"path": path_a})
+    assert r.json()["sections"]["Bill of Materials"]["rows"][1][2] == "Fill A"
+    r = client.get("/spec", params={"path": path_b})
+    assert r.json()["sections"]["Bill of Materials"]["rows"][1][2] == "Fill B"
+
+
+def test_batch_cell_write_field_kind(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.put(
+        "/spec/cells/batch",
+        json={"edits": [{"path": path, "section": "Locations", "kind": "field", "label": "Facility", "value": "New Plant"}], "who": "Isaac"},
+    )
+    assert r.status_code == 200
+
+    r = client.get("/spec", params={"path": path})
+    assert r.json()["sections"]["Locations"]["fields"]["Facility"] == "New Plant"
+
+
+def test_batch_cell_write_rejects_whole_batch_if_any_edit_locked(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.put(
+        "/spec/cells/batch",
+        json={
+            "edits": [
+                {"path": path, "section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "Should not land"},
+                {"path": path, "section": "Revision History", "kind": "record", "row": 1, "col": 3, "value": "Rewritten"},
+            ],
+            "who": "Isaac",
+        },
+    )
+    assert r.status_code == 422
+    assert "Add Revision" in r.json()["detail"]
+
+    # confirm the FIRST (otherwise-valid) edit in the batch did not land either
+    r = client.get("/spec", params={"path": path})
+    assert r.json()["sections"]["Bill of Materials"]["rows"][1][2] == "Flex Films"
+
+
+def test_batch_cell_write_logs_one_audit_entry_per_file_not_per_cell(client, tmp_path):
+    path_a = str(tmp_path / "a.docx")
+    path_b = str(tmp_path / "b.docx")
+    build_sample_spec_docx(path_a, spec_number="SW0001")
+    build_sample_spec_docx(path_b, spec_number="SW0002")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    client.put(
+        "/spec/cells/batch",
+        json={
+            "edits": [
+                {"path": path_a, "section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "V1"},
+                {"path": path_a, "section": "Bill of Materials", "kind": "record", "row": 1, "col": 3, "value": "V2"},
+                {"path": path_b, "section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "V3"},
+            ],
+            "who": "Isaac",
+        },
+    )
+
+    r = client.get("/audit-log")
+    entries = r.json()["entries"]
+    assert len(entries) == 2  # one per file, not one per cell (3 cells total)
+    fill_entries = [e for e in entries if e["action"] == "fill_column"]
+    assert len(fill_entries) == 2
+    entry_a = next(e for e in fill_entries if e["file_path"] == path_a)
+    assert len(entry_a["edits"]) == 2
+    assert entry_a["edits"][0]["old_value"] == "Flex Films"
+    assert entry_a["edits"][0]["new_value"] == "V1"
