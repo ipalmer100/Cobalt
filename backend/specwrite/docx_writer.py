@@ -156,6 +156,17 @@ def append_row(path: str, section: str, values: list[str]) -> None:
     doc.save(path)
 
 
+def clear_records(path: str, section: str) -> None:
+    """Remove every data row from a RECORDS-shape section, keeping only
+    the header row. Used when spinning up a new spec (duplicate or blank
+    template) so its Revision History doesn't inherit another spec's log."""
+    doc = Document(path)
+    table = _resolve_table(doc, section)
+    for row in list(table.rows[1:]):
+        row._tr.getparent().remove(row._tr)
+    doc.save(path)
+
+
 def apply_revision(path: str, who: str, revision_text: str, revision_date: date_cls | None = None) -> str:
     """Append a Revision History row and bump the Revision # in Product
     Description. Returns the new revision number. Generalizes

@@ -3,6 +3,7 @@ import { connectLiveUpdates, getSpec, listVault, listViews, openVault } from "./
 import Sidebar from "./components/Sidebar";
 import SpecDetail from "./components/SpecDetail";
 import MassEditGrid from "./components/MassEditGrid";
+import NewSpecModal from "./components/NewSpecModal";
 import type { SpecDetail as SpecDetailType, VaultEntry } from "./types";
 import "./App.css";
 
@@ -21,6 +22,7 @@ export default function App() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const [showNewSpec, setShowNewSpec] = useState(false);
 
   async function refreshVaultList() {
     try {
@@ -94,7 +96,26 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <Sidebar root={root} entries={entries} selectedPath={selectedPath} onSelect={setSelectedPath} />
+      <Sidebar
+        root={root}
+        entries={entries}
+        selectedPath={selectedPath}
+        onSelect={setSelectedPath}
+        onNewSpec={() => setShowNewSpec(true)}
+      />
+      {showNewSpec && (
+        <NewSpecModal
+          root={root}
+          entries={entries}
+          onClose={() => setShowNewSpec(false)}
+          onCreated={(path) => {
+            setShowNewSpec(false);
+            refreshVaultList();
+            setSelectedPath(path);
+            setMode("detail");
+          }}
+        />
+      )}
       <div className="main-panel">
         <div className="mode-tabs">
           <button className={mode === "detail" ? "active" : ""} onClick={() => setMode("detail")}>

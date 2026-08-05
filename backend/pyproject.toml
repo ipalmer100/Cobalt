@@ -6,7 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "python-docx>=1.1.0",
     "fastapi>=0.110.0",
-    "uvicorn>=0.29.0",
+    "uvicorn[standard]>=0.29.0",
     "watchdog>=4.0.0",
 ]
 

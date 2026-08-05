@@ -28,9 +28,21 @@ Information, etc.) instead of opening one Word document at a time.
 - **`backend/specwrite/api.py`** — FastAPI HTTP + WebSocket layer over
   the above. One vault open at a time; the WebSocket pushes a "changed"
   event on every write (ours or an external Word edit) so open views
-  refresh immediately.
-- **`frontend/`** — a small React/Vite shell: sidebar file list, a
-  read-only Spec Detail view, and the tabular Mass Edit grid.
+  refresh immediately. (Needs `uvicorn[standard]` — plain `uvicorn` has no
+  WebSocket implementation and silently 404s `/ws`; see pyproject.toml.)
+- **`backend/specwrite/doc_conversion.py`** — converts legacy `.doc`
+  files to `.docx` via LibreOffice headless (`soffice --headless
+  --convert-to docx`). The original `.doc` is never touched/deleted.
+- **`backend/specwrite/creation.py`** — creates a new spec, either by
+  duplicating an existing one (data tables carry over as a starting
+  point; Spec #, Customer, and Revision History reset) or from the
+  bundled blank template (`specwrite/templates/blank_spec_template.docx`
+  — a synthetic placeholder with no real branding; swap in a real blank
+  Toppan master template by regenerating via
+  `scripts/build_blank_template.py` or replacing the file directly).
+- **`frontend/`** — a small React/Vite shell: sidebar file list with a
+  "New Spec" action and a convert-to-.docx link on legacy `.doc` entries,
+  a read-only Spec Detail view, and the tabular Mass Edit grid.
 
 ## Running it
 
@@ -75,8 +87,15 @@ python scripts/validate_real_specs.py /path/to/spec1.docx /path/to/spec2.docx
 - One row in Slitting Information sometimes stacks two labels
   (`Core Tags:` / `Splice Code:`) inside a single physical cell; the
   parser currently reads that as one combined field instead of two.
-- Legacy `.doc` files (pre-2007 binary format) are detected and flagged
-  as unsupported rather than parsed — they'd need a conversion step.
+- `.doc` conversion requires LibreOffice installed and functional on the
+  machine running the backend (`soffice` on PATH). It degrades to a
+  clear error if missing or non-functional, but hasn't been validated
+  against a real legacy `.doc` file end-to-end in this repo's own dev
+  environment (LibreOffice's headless mode was broken in the sandbox
+  this was built in — the code follows the standard approach, but test
+  it against your real deployment target before relying on it).
+- The blank "New Spec" template is synthetic (no real logo/boilerplate)
+  until someone swaps in a real blank Toppan master template.
 - Only one vault can be open at a time (matches the single-folder,
   single-window model this is meant to emulate, but is a real constraint
   if multiple admins need concurrent access).

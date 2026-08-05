@@ -58,6 +58,27 @@ export function appendRevision(path: string, who: string, revision_text: string)
   });
 }
 
+export function convertDoc(path: string) {
+  return request<{ ok: boolean; path: string; spec_number: string | null }>("/spec/convert-doc", {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+}
+
+export function duplicateSpec(sourcePath: string, destPath: string, specNumber: string, customer: string, who: string) {
+  return request<{ ok: boolean; path: string; spec_number: string }>("/spec/duplicate", {
+    method: "POST",
+    body: JSON.stringify({ source_path: sourcePath, dest_path: destPath, spec_number: specNumber, customer, who }),
+  });
+}
+
+export function createBlankSpec(destPath: string, specNumber: string, customer: string, who: string) {
+  return request<{ ok: boolean; path: string; spec_number: string }>("/spec/create-blank", {
+    method: "POST",
+    body: JSON.stringify({ dest_path: destPath, spec_number: specNumber, customer, who }),
+  });
+}
+
 export function connectLiveUpdates(onChanged: (path: string) => void): () => void {
   const wsBase = BASE.replace(/^http/, "ws");
   const ws = new WebSocket(`${wsBase}/ws`);

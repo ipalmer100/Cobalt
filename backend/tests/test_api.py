@@ -93,3 +93,55 @@ def test_apply_revision_endpoint(client, tmp_path):
 def test_operations_without_open_vault_return_400(client):
     r = client.get("/vault")
     assert r.status_code == 400
+
+
+def test_duplicate_spec_endpoint(client, tmp_path):
+    source = str(tmp_path / "source.docx")
+    build_sample_spec_docx(source, spec_number="SW0001")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    dest = str(tmp_path / "new_spec.docx")
+    r = client.post(
+        "/spec/duplicate",
+        json={"source_path": source, "dest_path": dest, "spec_number": "SW0099", "customer": "New Co", "who": "Isaac"},
+    )
+    assert r.status_code == 200
+    assert r.json()["spec_number"] == "SW0099"
+
+    r = client.get("/vault")
+    numbers = {e["spec_number"] for e in r.json()["entries"]}
+    assert numbers == {"SW0001", "SW0099"}
+
+
+def test_duplicate_spec_rejects_path_outside_vault(client, tmp_path):
+    source = str(tmp_path / "source.docx")
+    build_sample_spec_docx(source)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/duplicate",
+        json={
+            "source_path": source,
+            "dest_path": "/tmp/outside_vault_spec.docx",
+            "spec_number": "SW0099",
+            "customer": "New Co",
+            "who": "Isaac",
+        },
+    )
+    assert r.status_code == 400
+    assert "inside the open vault" in r.json()["detail"]
+
+
+def test_create_blank_spec_endpoint(client, tmp_path):
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    dest = str(tmp_path / "brand_new.docx")
+    r = client.post(
+        "/spec/create-blank",
+        json={"dest_path": dest, "spec_number": "SW0100", "customer": "Fresh Co", "who": "Isaac"},
+    )
+    assert r.status_code == 200
+    assert r.json()["spec_number"] == "SW0100"
+
+    r = client.get("/spec", params={"path": dest})
+    assert r.json()["customer"] == "Fresh Co"

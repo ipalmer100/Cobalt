@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from .doc_conversion import ConversionError, convert_doc_to_docx
+from .creation import CreationError, create_blank_spec, duplicate_spec
 from .docx_sections import ALL_SECTIONS
 from .docx_writer import append_row, apply_revision, write_cell, write_field_value
 from .vault import Vault
@@ -48,6 +51,16 @@ def _vault() -> Vault:
     if vault is None:
         raise HTTPException(status_code=400, detail="No vault is open. POST /vault/open first.")
     return vault
+
+
+def _require_within_vault(vault: Vault, path: str) -> None:
+    """New files get written by this API (conversion, duplication, blank
+    creation) — keep them inside the open vault rather than letting a
+    client point the app at an arbitrary path on disk."""
+    resolved = Path(path).resolve()
+    root = Path(vault.root)
+    if root not in resolved.parents and resolved != root:
+        raise HTTPException(status_code=400, detail=f"Path must be inside the open vault ({vault.root})")
 
 
 def _broadcast(path: str) -> None:
@@ -94,6 +107,25 @@ class ReviseRequest(BaseModel):
     path: str
     who: str
     revision_text: str
+
+
+class ConvertDocRequest(BaseModel):
+    path: str
+
+
+class DuplicateSpecRequest(BaseModel):
+    source_path: str
+    dest_path: str
+    spec_number: str
+    customer: str
+    who: str
+
+
+class CreateBlankSpecRequest(BaseModel):
+    dest_path: str
+    spec_number: str
+    customer: str
+    who: str
 
 
 @app.post("/vault/open")
@@ -195,6 +227,52 @@ def post_revision(req: ReviseRequest) -> dict:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.path)
     return {"ok": True, "revision_number": new_rev}
+
+
+@app.post("/spec/convert-doc")
+def post_convert_doc(req: ConvertDocRequest) -> dict:
+    """Convert a legacy .doc file to .docx via LibreOffice headless. The
+    original .doc is left in place — nothing is deleted automatically."""
+    vault = _vault()
+    _require_within_vault(vault, req.path)
+    if not req.path.lower().endswith(".doc"):
+        raise HTTPException(status_code=422, detail="Not a .doc file")
+    try:
+        new_path = convert_doc_to_docx(req.path)
+    except ConversionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    vault.refresh(new_path)
+    entry = vault.get(new_path)
+    return {
+        "ok": True,
+        "path": new_path,
+        "spec_number": entry.spec.spec_number if entry and entry.spec else None,
+    }
+
+
+@app.post("/spec/duplicate")
+def post_duplicate_spec(req: DuplicateSpecRequest) -> dict:
+    vault = _vault()
+    _require_within_vault(vault, req.source_path)
+    _require_within_vault(vault, req.dest_path)
+    try:
+        spec = duplicate_spec(req.source_path, req.dest_path, req.spec_number, req.customer, req.who)
+    except CreationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    vault.refresh(req.dest_path)
+    return {"ok": True, "path": req.dest_path, "spec_number": spec.spec_number}
+
+
+@app.post("/spec/create-blank")
+def post_create_blank_spec(req: CreateBlankSpecRequest) -> dict:
+    vault = _vault()
+    _require_within_vault(vault, req.dest_path)
+    try:
+        spec = create_blank_spec(req.dest_path, req.spec_number, req.customer, req.who)
+    except CreationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    vault.refresh(req.dest_path)
+    return {"ok": True, "path": req.dest_path, "spec_number": spec.spec_number}
 
 
 @app.websocket("/ws")

@@ -331,3 +331,126 @@ table.records-table.editable input:focus {
   text-align: center;
   color: var(--text-muted);
 }
+
+.new-spec-button {
+  margin: 8px;
+  padding: 8px;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.new-spec-button:hover {
+  background: var(--bg-hover);
+}
+
+.sidebar-error {
+  margin: 0 8px 8px;
+}
+
+.convert-link {
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.modal {
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 20px 24px;
+  width: 420px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.modal h2 {
+  margin: 0;
+}
+
+.mode-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.mode-toggle button {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.mode-toggle button.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.mode-toggle button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.modal-field input,
+.modal-field select {
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.modal-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.modal-actions button {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.modal-actions button.primary {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
