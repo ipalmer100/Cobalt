@@ -34,6 +34,9 @@ Information, etc.) instead of opening one Word document at a time.
 - **`backend/specwrite/doc_conversion.py`** — converts legacy `.doc`
   files to `.docx` via LibreOffice headless (`soffice --headless
   --convert-to docx`). The original `.doc` is never touched/deleted.
+  `vault.py` calls this automatically and silently the first time it sees
+  a `.doc` without a same-named `.docx` next to it — see "Legacy `.doc`
+  handling" below; there's no manual "convert" action anywhere in the UI.
 - **`backend/specwrite/creation.py`** — creates a new spec, either by
   duplicating an existing one (data tables carry over as a starting
   point; Spec #, Customer, and Revision History reset) or from the
@@ -50,12 +53,50 @@ Information, etc.) instead of opening one Word document at a time.
   opens it. `GET /audit-log` reads it back; the frontend's "Audit Log"
   tab shows it as a table (time, who, spec, what changed).
 - **`frontend/`** — a small React/Vite shell: sidebar file list with a
-  "New Spec" action and a convert-to-.docx link on legacy `.doc` entries,
-  a read-only Spec Detail view, the tabular Mass Edit grid, and the
+  "New Spec" action (a legacy `.doc` entry shows its automatic
+  conversion's live status — "Converting to .docx…", then either
+  disappears once the `.docx` is ready or shows an error — with no click
+  required), a read-only Spec Detail view, the tabular Mass Edit grid, and the
   Audit Log tab. A "Your name" field in the top bar (persisted in
   `localStorage`) is attached to every write for the audit log's "who" —
   there's no login system, so this is a per-browser display name, not
   authentication.
+
+### Legacy `.doc` handling is automatic, one-time, and silent
+
+python-docx (and therefore the whole parser/writer) can only read the
+post-2007 `.docx` XML format, so a `.doc` file is useless to the app as
+it is. Rather than surfacing that as a "please convert this yourself"
+prompt, the vault handles it on its own the moment it sees the file:
+
+- The first time `vault.py` indexes a `.doc` with no same-named `.docx`
+  next to it, it queues that file for conversion (via
+  `doc_conversion.convert_doc_to_docx`) on a dedicated background thread
+  — never blocking vault-open or any other request. Deliberately one
+  file at a time rather than a pool: concurrent `soffice --headless`
+  invocations can collide over the same default LibreOffice
+  user-profile lock.
+- Until that finishes, the file shows up as a normal vault entry with a
+  "Converting to .docx…" status (visible in the sidebar, no click
+  needed) rather than being hidden or blocking anything.
+- Once conversion succeeds, the resulting `.docx` becomes the real,
+  tracked entry (parsed, editable, listed under its own name) and the
+  `.doc` entry disappears — the app only ever shows/edits `.docx` from
+  that point on. The original `.doc` file is left on disk untouched
+  (never deleted or modified) as a safety net; only the app's view of
+  the vault stops tracking it.
+- If conversion fails (LibreOffice missing, broken, or a genuinely
+  corrupt file), the entry shows a "Conversion failed: …" error instead
+  of retrying in a loop. Reopening the vault (or fixing LibreOffice and
+  restarting the app) tries again, since "does a `.docx` sibling already
+  exist" is itself the durable record of "already converted" — there's
+  no separate database tracking conversion state, and no re-conversion
+  of a `.doc` that already has its `.docx` counterpart.
+
+This means a folder with, say, 150 `.doc` files and 150 `.docx` files
+"just works": open the vault, the 150 `.docx` files are immediately
+usable, and the 150 `.doc` files quietly become `.docx` in the
+background over the next while with no action needed from anyone.
 
 ### Revision History is deliberately manual, and deliberately locked
 
@@ -223,20 +264,23 @@ count with burst size.
 
 **What's confirmed working correctly at 15,000 files, mixed `.doc`/
 `.docx`:** indexing (all 15,000 entries land with correct
-spec_number/customer/revision, `.doc` files correctly flagged
-unsupported without attempting to parse them), the sidebar, Mass Edit
-view loading, single-cell edits, and memory footprint (~800MB resident
-holding all 13,500 parsed specs — actually *lower* than before
-parallelizing indexing, likely because work distributed across
+spec_number/customer/revision, `.doc` files correctly queued for
+automatic background conversion rather than left unhandled), the
+sidebar, Mass Edit view loading, single-cell edits, and memory footprint
+(~800MB resident holding all 13,500 parsed specs — actually *lower* than
+before parallelizing indexing, likely because work distributed across
 short-lived worker processes leaves less garbage in the long-lived main
 process's heap than parsing everything in one process would).
 
 **What this pass did not fix, and is worth knowing about before relying
 on this at that scale day-to-day:**
-- Converting `.doc` files to `.docx` is still one-at-a-time from the
-  sidebar. Fine for occasional legacy files; a real gap if a 15,000-file
-  archive has hundreds or thousands of `.doc` files needing conversion —
-  a batch "convert all" endpoint would be the natural next step.
+- `.doc` conversion runs one file at a time in the background (see
+  "Legacy `.doc` handling" above), deliberately, to avoid concurrent
+  `soffice` invocations fighting over the same LibreOffice profile lock.
+  At 1,500 `.doc` files converting serially, that's a real, if
+  non-blocking, multi-minute-to-longer background tail — everything else
+  in the vault is fully usable while it runs, but don't expect all 1,500
+  to have finished converting within the first few seconds.
 - `/views/{section}` still returns every matching row across the whole
   vault in one response (Bill of Materials at 15,000 files was a 64MB
   JSON payload). The Mass Edit grid's own rendering is virtualized and
@@ -255,13 +299,16 @@ on this at that scale day-to-day:**
 - One row in Slitting Information sometimes stacks two labels
   (`Core Tags:` / `Splice Code:`) inside a single physical cell; the
   parser currently reads that as one combined field instead of two.
-- `.doc` conversion requires LibreOffice installed and functional on the
-  machine running the backend (`soffice` on PATH). It degrades to a
-  clear error if missing or non-functional, but hasn't been validated
-  against a real legacy `.doc` file end-to-end in this repo's own dev
-  environment (LibreOffice's headless mode was broken in the sandbox
-  this was built in — the code follows the standard approach, but test
-  it against your real deployment target before relying on it).
+- `.doc` conversion (automatic, see "Legacy `.doc` handling" above)
+  requires LibreOffice installed and functional on the machine running
+  the backend (`soffice` on PATH, or bundled into the packaged desktop
+  app — see `packaging/README.md`). Each `.doc` degrades to a clear
+  per-file error in the sidebar if missing or non-functional, but hasn't
+  been validated against a real legacy `.doc` file end-to-end in this
+  repo's own dev environment (LibreOffice's headless mode was broken in
+  the sandbox this was built in — the code follows the standard
+  approach, but test it against your real deployment target before
+  relying on it).
 - The blank "New Spec" template is synthetic (no real logo/boilerplate)
   until someone swaps in a real blank Toppan master template.
 - Only one vault can be open at a time (matches the single-folder,

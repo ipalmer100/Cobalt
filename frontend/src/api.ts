@@ -68,13 +68,6 @@ export function appendRevision(path: string, who: string, revision_text: string)
   });
 }
 
-export function convertDoc(path: string) {
-  return request<{ ok: boolean; path: string; spec_number: string | null }>("/spec/convert-doc", {
-    method: "POST",
-    body: JSON.stringify({ path }),
-  });
-}
-
 export function duplicateSpec(sourcePath: string, destPath: string, specNumber: string, customer: string, who: string) {
   return request<{ ok: boolean; path: string; spec_number: string }>("/spec/duplicate", {
     method: "POST",

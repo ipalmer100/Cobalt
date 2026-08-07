@@ -23,7 +23,6 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .audit_log import append_entry, read_entries
-from .doc_conversion import ConversionError, convert_doc_to_docx
 from .creation import CreationError, create_blank_spec, duplicate_spec
 from .docx_sections import PRODUCT_DESCRIPTION, ALL_SECTIONS
 from .docx_writer import append_row, apply_revision, write_cell, write_edits_batch, write_field_value
@@ -186,10 +185,6 @@ class ReviseRequest(BaseModel):
     path: str
     who: str
     revision_text: str
-
-
-class ConvertDocRequest(BaseModel):
-    path: str
 
 
 class DuplicateSpecRequest(BaseModel):
@@ -434,32 +429,6 @@ def post_revision(req: ReviseRequest) -> dict:
         revision_text=req.revision_text,
     )
     return {"ok": True, "revision_number": new_rev}
-
-
-@app.post("/spec/convert-doc")
-def post_convert_doc(req: ConvertDocRequest) -> dict:
-    """Convert a legacy .doc file to .docx via LibreOffice headless. The
-    original .doc is left in place — nothing is deleted automatically."""
-    vault = _vault()
-    _require_within_vault(vault, req.path)
-    if not req.path.lower().endswith(".doc"):
-        raise HTTPException(status_code=422, detail="Not a .doc file")
-    try:
-        new_path = convert_doc_to_docx(req.path)
-    except ConversionError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    vault.refresh(new_path)
-    entry = vault.get(new_path)
-    spec_number = entry.spec.spec_number if entry and entry.spec else None
-    append_entry(
-        vault.root,
-        "convert_doc",
-        "",
-        source_path=req.path,
-        new_path=new_path,
-        spec_number=spec_number,
-    )
-    return {"ok": True, "path": new_path, "spec_number": spec_number}
 
 
 @app.post("/spec/duplicate")

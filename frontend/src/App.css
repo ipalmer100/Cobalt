@@ -132,6 +132,11 @@
   color: var(--error);
 }
 
+.sidebar-item-meta.pending {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .sidebar-empty {
   padding: 12px;
   font-size: 12px;
@@ -613,15 +618,6 @@ td.fill-preview {
   background: var(--bg-hover);
 }
 
-.sidebar-error {
-  margin: 0 8px 8px;
-}
-
-.convert-link {
-  color: var(--accent);
-  text-decoration: underline;
-  cursor: pointer;
-}
 
 .modal-backdrop {
   position: fixed;

@@ -6,10 +6,14 @@ Differences from Obsidian worth being explicit about, since this isn't a
 1:1 port:
 - Obsidian's files are its own content (markdown); ours are the .docx
   files themselves, so a "note" here is a parsed Spec, not raw text.
-- Obsidian treats every file as trusted; we can't parse .doc (legacy
-  binary Word format) with python-docx, so those show up as unparsed
-  entries rather than crashing the index — same idea as Obsidian showing
-  an unsupported attachment type without indexing its content.
+- We can't parse .doc (legacy binary Word format) with python-docx, so a
+  .doc file gets silently, automatically converted to a same-named .docx
+  the first time the vault sees it (in the background -- vault-open
+  doesn't wait on it) and is never shown/tracked itself once that .docx
+  exists. This is a one-time, per-file event: a rescan or restart doesn't
+  redo it, since "does the .docx sibling already exist" is itself the
+  record of "already converted." The original .doc is left on disk
+  untouched (never deleted) -- only the .docx is ever added to the vault.
 - Word's lock files (``~$name.docx``) are filtered out, same category of
   noise as Obsidian ignoring its own ``.obsidian`` config folder.
 """
@@ -18,6 +22,7 @@ from __future__ import annotations
 
 import gc
 import os
+import queue
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
@@ -28,6 +33,8 @@ from typing import Callable
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+from .audit_log import append_entry
+from .doc_conversion import ConversionError, convert_doc_to_docx
 from .docx_sections import parse_document
 from .models import Spec
 
@@ -35,6 +42,7 @@ VaultListener = Callable[[str], None]  # called with the changed file's path
 
 _DEBOUNCE_SECONDS = 0.4
 _REFRESH_WORKER_COUNT = 4
+_CONVERTING_MESSAGE = "Converting to .docx…"
 
 
 @dataclass
@@ -54,13 +62,25 @@ def _is_spec_file(name: str) -> bool:
     return lower.endswith(".docx") or lower.endswith(".doc")
 
 
+def _docx_sibling(doc_path: str) -> str:
+    return str(Path(doc_path).with_suffix(".docx"))
+
+
 # Module-level (not a method) so it can be pickled and sent to worker
 # processes for parallel indexing -- see Vault._full_index. Also used
 # directly for the single-file case (file-watcher events, our own writes),
 # where spawning a whole process pool for one file would be pure overhead.
-def _build_entry(path: str) -> VaultEntry:
+#
+# Returns None to mean "no entry, don't track this path at all" -- used
+# for a legacy .doc whose .docx counterpart already exists (already
+# converted, this run or an earlier one): the .docx is the real entry now,
+# indexed separately when _walk() reaches it, so the .doc itself is simply
+# not shown.
+def _build_entry(path: str) -> VaultEntry | None:
     if path.lower().endswith(".doc"):
-        return VaultEntry(path=path, spec=None, error="Legacy .doc format is not parsed (re-save as .docx).", supported=False)
+        if Path(_docx_sibling(path)).exists():
+            return None
+        return VaultEntry(path=path, spec=None, error=_CONVERTING_MESSAGE, supported=False)
     try:
         spec = parse_document(path)
         return VaultEntry(path=path, spec=spec, error=None, supported=True)
@@ -90,6 +110,10 @@ class Vault:
         self._refresh_pool: ThreadPoolExecutor | None = None
         self._scheduler_thread: threading.Thread | None = None
         self._scheduler_stop = threading.Event()
+        self._conversion_queue: queue.Queue[str] = queue.Queue()
+        self._conversions_in_flight: set[str] = set()
+        self._converter_thread: threading.Thread | None = None
+        self._converter_stop = threading.Event()
 
     # -- public API ---------------------------------------------------
 
@@ -113,6 +137,10 @@ class Vault:
         if self._refresh_pool is not None:
             self._refresh_pool.shutdown(wait=False)
             self._refresh_pool = None
+        self._converter_stop.set()
+        if self._converter_thread is not None:
+            self._converter_thread.join(timeout=2)
+            self._converter_thread = None
 
     def entries(self) -> list[VaultEntry]:
         with self._lock:
@@ -148,7 +176,7 @@ class Vault:
 
         if len(paths) < _PARALLEL_INDEX_THRESHOLD:
             for file_path in paths:
-                self._store(_build_entry(file_path))
+                self._store_and_maybe_enqueue(_build_entry(file_path))
         else:
             self._full_index_parallel(paths)
 
@@ -177,11 +205,18 @@ class Vault:
         chunksize = max(1, min(50, len(paths) // (worker_count * 4)))
         with ProcessPoolExecutor(max_workers=worker_count) as executor:
             for entry in executor.map(_build_entry, paths, chunksize=chunksize):
-                self._store(entry)
+                self._store_and_maybe_enqueue(entry)
 
-    def _store(self, entry: VaultEntry) -> None:
+    def _store(self, entry: VaultEntry | None) -> None:
+        if entry is None:
+            return
         with self._lock:
             self._entries[entry.path] = entry
+
+    def _store_and_maybe_enqueue(self, entry: VaultEntry | None) -> None:
+        self._store(entry)
+        if entry is not None and entry.error == _CONVERTING_MESSAGE:
+            self._enqueue_conversion(entry.path)
 
     def _walk(self):
         root = Path(self.root)
@@ -201,7 +236,15 @@ class Vault:
             with self._lock:
                 self._entries.pop(path, None)
             return
-        self._store(_build_entry(path))
+        entry = _build_entry(path)
+        if entry is None:
+            # A .doc whose .docx sibling now exists (e.g. this run's
+            # auto-conversion just finished, or someone else created a
+            # same-named .docx) -- drop any stale entry for the .doc itself.
+            with self._lock:
+                self._entries.pop(path, None)
+            return
+        self._store_and_maybe_enqueue(entry)
 
     # -- live watching ----------------------------------------------------
 
@@ -216,6 +259,10 @@ class Vault:
         self._scheduler_stop.clear()
         self._scheduler_thread = threading.Thread(target=self._debounce_scheduler_loop, daemon=True)
         self._scheduler_thread.start()
+
+        self._converter_stop.clear()
+        self._converter_thread = threading.Thread(target=self._conversion_worker_loop, daemon=True)
+        self._converter_thread.start()
 
     def _schedule_refresh(self, path: str) -> None:
         """Debounce bursts of filesystem events (Word/OneDrive fire several
@@ -243,6 +290,55 @@ class Vault:
             for path in due:
                 self._refresh_pool.submit(self.refresh, path)
             time.sleep(0.05)
+
+    # -- automatic .doc -> .docx conversion ------------------------------
+
+    def _enqueue_conversion(self, doc_path: str) -> None:
+        with self._lock:
+            if doc_path in self._conversions_in_flight:
+                return  # already queued or converting -- don't double up
+            self._conversions_in_flight.add(doc_path)
+        self._conversion_queue.put(doc_path)
+
+    def _conversion_worker_loop(self) -> None:
+        # Deliberately one file at a time, not a pool: concurrent
+        # `soffice --headless` invocations can collide over the same
+        # default LibreOffice user-profile lock. Fine to be serial here --
+        # this runs in the background regardless, never blocking vault-open
+        # or any other operation.
+        while not self._converter_stop.is_set():
+            try:
+                doc_path = self._conversion_queue.get(timeout=0.2)
+            except queue.Empty:
+                continue
+            self._convert_one(doc_path)
+
+    def _convert_one(self, doc_path: str) -> None:
+        docx_path = _docx_sibling(doc_path)
+        try:
+            convert_doc_to_docx(doc_path, docx_path)
+        except ConversionError as exc:
+            self._store(VaultEntry(path=doc_path, spec=None, error=f"Conversion failed: {exc}", supported=False))
+            for listener in self._listeners:
+                listener(doc_path)
+        else:
+            with self._lock:
+                self._entries.pop(doc_path, None)
+            self._index_one(docx_path)
+            entry = self.get(docx_path)
+            append_entry(
+                self.root,
+                "auto_convert_doc",
+                "",
+                source_path=doc_path,
+                new_path=docx_path,
+                spec_number=entry.spec.spec_number if entry and entry.spec else None,
+            )
+            for listener in self._listeners:
+                listener(docx_path)
+        finally:
+            with self._lock:
+                self._conversions_in_flight.discard(doc_path)
 
 
 class _Handler(FileSystemEventHandler):

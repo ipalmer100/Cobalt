@@ -1,6 +1,5 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { convertDoc } from "../api";
 import type { VaultEntry } from "../types";
 
 interface Props {
@@ -12,6 +11,16 @@ interface Props {
 }
 
 const ROW_HEIGHT_ESTIMATE = 52;
+// Matches vault.py's _CONVERTING_MESSAGE -- a legacy .doc file is
+// auto-converted to .docx in the background as soon as the vault sees it
+// (no click needed), and shows this transient status until then.
+const CONVERTING_MESSAGE = "Converting to .docx…";
+
+const MAX_STATUS_LENGTH = 60;
+
+function truncate(text: string): string {
+  return text.length > MAX_STATUS_LENGTH ? text.slice(0, MAX_STATUS_LENGTH - 1) + "…" : text;
+}
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
@@ -28,8 +37,6 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
     () => [...entries].sort((a, b) => fileName(a.path).localeCompare(fileName(b.path))),
     [entries],
   );
-  const [converting, setConverting] = useState<string | null>(null);
-  const [convertError, setConvertError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -39,19 +46,6 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
     overscan: 12,
   });
 
-  async function handleConvert(path: string, e: React.MouseEvent) {
-    e.stopPropagation();
-    setConverting(path);
-    setConvertError(null);
-    try {
-      await convertDoc(path);
-    } catch (err) {
-      setConvertError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setConverting(null);
-    }
-  }
-
   return (
     <div className="sidebar">
       <div className="sidebar-root" title={root}>
@@ -60,12 +54,11 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
       <button className="new-spec-button" onClick={onNewSpec}>
         + New Spec
       </button>
-      {convertError && <div className="error sidebar-error">{convertError}</div>}
       <div className="sidebar-list" ref={scrollRef}>
         <div style={{ position: "relative", height: virtualizer.getTotalSize(), width: "100%" }}>
           {virtualizer.getVirtualItems().map((vi) => {
             const entry = sorted[vi.index];
-            const isLegacyDoc = !entry.supported && entry.path.toLowerCase().endsWith(".doc");
+            const isPending = entry.error === CONVERTING_MESSAGE;
             return (
               <button
                 key={entry.path}
@@ -83,15 +76,10 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
                   <span className="sidebar-item-meta">
                     {entry.spec_number} · Rev {entry.revision_number}
                   </span>
-                ) : isLegacyDoc ? (
-                  <span className="sidebar-item-meta error">
-                    legacy .doc —{" "}
-                    <span className="convert-link" onClick={(e) => handleConvert(entry.path, e)}>
-                      {converting === entry.path ? "converting…" : "convert to .docx"}
-                    </span>
-                  </span>
                 ) : (
-                  <span className="sidebar-item-meta error">unreadable</span>
+                  <span className={`sidebar-item-meta ${isPending ? "pending" : "error"}`}>
+                    {entry.error ? truncate(entry.error) : "unreadable"}
+                  </span>
                 )}
               </button>
             );
