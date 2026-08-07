@@ -303,12 +303,17 @@ on this at that scale day-to-day:**
   requires LibreOffice installed and functional on the machine running
   the backend (`soffice` on PATH, or bundled into the packaged desktop
   app — see `packaging/README.md`). Each `.doc` degrades to a clear
-  per-file error in the sidebar if missing or non-functional, but hasn't
-  been validated against a real legacy `.doc` file end-to-end in this
-  repo's own dev environment (LibreOffice's headless mode was broken in
-  the sandbox this was built in — the code follows the standard
-  approach, but test it against your real deployment target before
-  relying on it).
+  per-file error in the sidebar if missing or non-functional. Validated
+  end-to-end against a genuine legacy `.doc` file (a real sample spec,
+  downgraded to Word 97 binary format and back) — this repo's own dev
+  sandbox initially only had `libreoffice-core` installed, which has no
+  document filters at all (every format, not just `.doc`, failed to load
+  with "source file could not be loaded"); installing `libreoffice-writer`
+  on top of it fixed that completely. A normal full LibreOffice install
+  (the desktop installer, `apt install libreoffice`, or the Windows
+  installer used for the packaged app) already includes Writer, so this
+  is only worth knowing about if you hit that same error on an
+  intentionally minimal/headless-server LibreOffice install.
 - The blank "New Spec" template is synthetic (no real logo/boilerplate)
   until someone swaps in a real blank Toppan master template.
 - Only one vault can be open at a time (matches the single-folder,
