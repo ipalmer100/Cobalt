@@ -110,12 +110,22 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     }
   }
 
+  // Switching to a different view means different columns/rows entirely,
+  // so the old sort/filter/group-by wouldn't make sense anymore -- reset
+  // it. But refreshToken alone (a websocket "changed" broadcast, which
+  // fires for the user's own edit just as much as anyone else's) should
+  // only reload this same view's row data, not blow away whatever
+  // sort/filter/group-by the user currently has set.
   useEffect(() => {
-    load();
     setSortColumn(null);
     setFilters({});
     setGroupByColumn(null);
     setCollapsedGroups(new Set());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section]);
+
+  useEffect(() => {
+    load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section, refreshToken]);
 
