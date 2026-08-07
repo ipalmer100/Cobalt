@@ -10,5 +10,11 @@ dependencies = [
     "watchdog>=4.0.0",
 ]
 
+[project.optional-dependencies]
+build = ["pyinstaller>=6.0"]
+
+[project.scripts]
+specwrite-desktop = "specwrite.desktop:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -9,6 +9,13 @@ backend/.venv/
 frontend/node_modules/
 frontend/dist/
 
+# PyInstaller build output for the packaged desktop app
+packaging/build/
+packaging/dist/
+packaging/.build-venv/
+/build/
+/dist/
+
 # Real spec documents are customer data — never commit these.
 # (synthetic fixtures used by the test suite are generated at test time,
 # see backend/tests/fixtures/builder.py)

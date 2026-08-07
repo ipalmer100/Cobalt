@@ -1,6 +1,9 @@
 import type { AuditLogResponse, BatchEditItem, SpecDetail, VaultResponse, ViewResponse, ViewsListResponse } from "./types";
 
-const BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+// Empty string = same-origin relative requests, correct when the backend
+// serves this built frontend itself (the packaged desktop app). Local dev
+// (`npm run dev`, a separate Vite server) overrides this via .env.development.
+const BASE = import.meta.env.VITE_API_BASE ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {

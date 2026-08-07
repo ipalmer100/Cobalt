@@ -10,12 +10,14 @@ the same "instant" feel as Obsidian's live reload.
 from __future__ import annotations
 
 import asyncio
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .audit_log import append_entry, read_entries
@@ -499,3 +501,25 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     finally:
         if websocket in _state["sockets"]:
             _state["sockets"].remove(websocket)
+
+
+def _frontend_dist_dir() -> Path | None:
+    """Where the built frontend (`npm run build`'s `dist/`) lives, so this
+    same process can serve it alongside the API -- the single-origin,
+    single-port setup the packaged desktop app depends on (see desktop.py).
+    Checked in two places: PyInstaller's extracted bundle dir when frozen,
+    otherwise the sibling `frontend/dist` in the source tree. Returns None
+    (and the route below is never mounted) if neither exists, so running
+    the API alone against a separate dev frontend server is unaffected."""
+    frozen_base = getattr(sys, "_MEIPASS", None)
+    candidate = (
+        Path(frozen_base) / "frontend_dist"
+        if frozen_base
+        else Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    )
+    return candidate if candidate.is_dir() else None
+
+
+_dist_dir = _frontend_dist_dir()
+if _dist_dir is not None:
+    app.mount("/", StaticFiles(directory=_dist_dir, html=True), name="frontend")
