@@ -107,11 +107,12 @@ Open the printed Vite URL, enter the absolute path to a folder of spec
 
 ### Packaged desktop app (Windows)
 
-For a double-click `SpecWrite.exe` — no Python/Node install needed on the
-machine that *runs* it — see **[`packaging/README.md`](packaging/README.md)**.
-It's the same backend and frontend as above, bundled into one binary with
-PyInstaller; building it still requires Python/Node once, on whichever
-Windows machine produces the exe.
+For a double-click desktop app — no Python/Node install needed on the
+machine that *runs* it, and optionally LibreOffice bundled too so `.doc`
+conversion works with nothing extra installed there — see
+**[`packaging/README.md`](packaging/README.md)**. It's the same backend
+and frontend as above, bundled with PyInstaller; building it still
+requires Python/Node once, on whichever Windows machine produces it.
 
 ## Testing
 

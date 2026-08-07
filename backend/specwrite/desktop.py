@@ -10,6 +10,7 @@ Ctrl+C, stops the server -- there is no separate background/tray mode).
 from __future__ import annotations
 
 import socket
+import sys
 import threading
 import time
 import webbrowser
@@ -17,6 +18,7 @@ import webbrowser
 import uvicorn
 
 from .api import app
+from .doc_conversion import soffice_path
 
 HOST = "127.0.0.1"
 PORT = 8765
@@ -48,6 +50,18 @@ def main() -> None:
     print("Starting SpecWrite...")
     print(f"Opening http://{HOST}:{PORT}/ in your browser.")
     print("Keep this window open while you're using SpecWrite; closing it stops the app.\n")
+
+    found_soffice = soffice_path()
+    if found_soffice:
+        print(f".doc conversion: available ({found_soffice})")
+    else:
+        print(".doc conversion: unavailable -- install LibreOffice to enable it.")
+    print()
+    # Frozen console apps (especially on Windows) can buffer stdout past
+    # the point of usefulness once uvicorn.run() below blocks for the rest
+    # of the app's life -- flush explicitly so all of the above is visible
+    # immediately rather than whenever the OS pipe buffer happens to fill.
+    sys.stdout.flush()
     threading.Thread(target=_open_browser_when_ready, daemon=True).start()
     uvicorn.run(app, host=HOST, port=PORT, log_level="info")
 

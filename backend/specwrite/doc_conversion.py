@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -25,8 +26,34 @@ class ConversionError(RuntimeError):
     pass
 
 
+def _bundled_soffice_path() -> Path | None:
+    """The packaged desktop app can optionally bundle a full LibreOffice
+    install under `<app>/libreoffice/` (see packaging/specwrite.spec and
+    packaging/build_windows_exe.bat) so .doc conversion works with nothing
+    else installed on the machine running the app. `sys._MEIPASS` is the
+    right base dir for this in both PyInstaller layouts: the temp
+    extraction dir in onefile mode, or the app's own folder in onedir
+    mode. Absent when running from source or when the build didn't bundle
+    LibreOffice -- soffice_path() falls back to PATH in that case."""
+    frozen_base = getattr(sys, "_MEIPASS", None)
+    if not frozen_base:
+        return None
+    for name in ("soffice.exe", "soffice"):
+        candidate = Path(frozen_base) / "libreoffice" / "program" / name
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def soffice_path() -> str | None:
+    bundled = _bundled_soffice_path()
+    if bundled is not None:
+        return str(bundled)
+    return shutil.which("soffice")
+
+
 def soffice_available() -> bool:
-    return shutil.which("soffice") is not None
+    return soffice_path() is not None
 
 
 def convert_doc_to_docx(doc_path: str, dest_path: str | None = None, timeout: int = 60) -> str:
@@ -36,8 +63,9 @@ def convert_doc_to_docx(doc_path: str, dest_path: str | None = None, timeout: in
     a .docx extension. Raises ConversionError if LibreOffice isn't
     available or the conversion fails or produces no output.
     """
-    if not soffice_available():
-        raise ConversionError("LibreOffice ('soffice') is not installed or not on PATH.")
+    soffice = soffice_path()
+    if soffice is None:
+        raise ConversionError("LibreOffice ('soffice') is not installed, not on PATH, and not bundled.")
 
     source = Path(doc_path)
     if not source.exists():
@@ -50,7 +78,7 @@ def convert_doc_to_docx(doc_path: str, dest_path: str | None = None, timeout: in
     with tempfile.TemporaryDirectory() as tmp_dir:
         result = subprocess.run(
             [
-                "soffice",
+                soffice,
                 "--headless",
                 "--norestore",
                 "--convert-to",
