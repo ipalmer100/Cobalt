@@ -134,21 +134,22 @@ python scripts/validate_real_specs.py /path/to/spec1.docx /path/to/spec2.docx
 ## Performance
 
 Measured against copies of real spec files (not the tiny synthetic test
-fixture), on this dev container's hardware — treat as directional, not a
-guarantee of your deployment target, but the shape of the numbers should
-hold:
+fixture), on this dev container's hardware (4 cores) — treat as
+directional, not a guarantee of your deployment target, but the shape of
+the numbers should hold:
 
-| Operation | 50 files | 200 files | 1000 files |
-|---|---|---|---|
-| Cold vault open (parse everything) | 2.4s | 10.4s | 53.0s |
-| Single cell edit, round trip | 161ms | 183ms | 162ms |
-| Cross-vault Bill of Materials view, server-side build | 13ms | 7ms | 82ms |
+| Operation | 50 files | 200 files | 1000 files | 15,000 files |
+|---|---|---|---|---|
+| Cold vault open (parse everything, parallelized) | ~1s | ~3s | ~15s | ~3 min |
+| Single cell edit, round trip | 161ms | 183ms | 162ms | ~180ms |
+| Bill of Materials view, server-side build + serialize | 13ms | 7ms | 82ms | ~1.1s |
+| Audit log read (last 200 entries) | <1ms | <1ms | <1ms | <1ms regardless of log size |
 
-Two things worth knowing:
+Three things worth knowing:
 
 - **Editing is fast regardless of vault size.** A single cell write only
   ever re-parses the one file that changed, not the whole vault, so it
-  stays around 150–200ms whether the vault has 50 files or 1000. This
+  stays around 150–200ms whether the vault has 50 files or 15,000. This
   used to *not* be true in the frontend specifically — the Mass Edit
   grid was refetching and re-rendering the entire view after every
   single edit, which took 3+ seconds on a 1650-row grid even though the
@@ -156,20 +157,98 @@ Two things worth knowing:
   local state instead of reloading the whole table; verified in a real
   browser that a single edit against a 1650-row grid now takes ~0.35s
   (was ~3.3s).
-- **Opening a very large vault for the first time is a real, linear
-  cost** (~50ms/file to parse) — 200 files is an ~11 second wait, 1000
-  files is closer to a minute. That's a one-time cost per session (not
-  per edit), but if real customer vaults run into the hundreds of files
-  opened all at once, it's worth knowing about before relying on this
-  day-to-day. Fixes if it matters in practice: index in the background
-  and populate the sidebar incrementally instead of blocking on the
-  full scan, or parallelize parsing across files (parsing is CPU-bound
-  and currently single-threaded).
+- **Opening a large vault is parallelized across CPU cores**, not
+  single-threaded. docx parsing is pure-Python, CPU-bound work that holds
+  the GIL for its whole duration, so threads wouldn't help — indexing
+  splits the file list across worker *processes* instead (see
+  `vault.py`'s `_full_index_parallel`). Confirmed on this 4-core sandbox:
+  a 15,000-file vault (13,500 `.docx` + 1,500 legacy `.doc`) that took
+  **~17 minutes** to cold-open before this fix takes **~3 minutes** after
+  it — a real machine with more cores should do better still. Below 32
+  files it stays sequential, since spinning up a process pool costs more
+  than it would save at that size.
+- **The first request against a freshly-opened large vault used to pay a
+  one-time garbage-collector tax.** Python's cyclic GC periodically walks
+  every tracked container object looking for reference cycles — including
+  the thousands of already-parsed, never-changing Spec objects sitting in
+  memory — even though a request like "build the Bill of Materials view"
+  never creates a cycle involving them. Confirmed empirically: the first
+  view request after opening a 15,000-file vault took ~3x longer than
+  every one after it (5–7.6s vs. ~1.6s), and calling `gc.freeze()` right
+  after the initial index (exempting that static object graph from future
+  collections) closed the gap — both now land around ~1.1–1.2s.
 
 For a realistic single-customer or single-product-line folder (tens of
 files), none of this is noticeable — everything above is snappy well
 under a second. It only becomes a real wait at the scale of a full
-multi-hundred-file archive opened as one vault.
+multi-hundred-file archive opened as one vault, and even then, opening is
+now a few minutes rather than tens of minutes at the high end (15,000
+files) tested here.
+
+### Scenario analysis: a 15,000-file mixed .doc/.docx library
+
+Run against a synthetic vault of 13,500 `.docx` + 1,500 legacy `.doc`
+files (real sample spec content, copied and renamed, not hand-built
+fixtures) to find where this breaks at the scale a full multi-year
+archive could reach. Four real, confirmed bugs came out of it and are
+fixed (see above and the git history for `vault.py`, `audit_log.py`,
+`api.py`, and `Sidebar.tsx`):
+
+1. Cold vault open was single-threaded (~17 min at 15,000 files) — fixed
+   via parallelized indexing across worker processes.
+2. The first Mass Edit view request after opening a large vault paid a
+   one-time GC scan of the whole persistent object graph (~3x slower
+   than every request after it) — fixed via `gc.freeze()`.
+3. The audit log (`.specwrite/audit_log.jsonl`) read and JSON-parsed its
+   *entire* contents on every request regardless of how many entries were
+   actually requested — harmless on a fresh vault, but a heavily-used
+   15,000-file vault's log can realistically grow to hundreds of MB over
+   months, and it was taking 4+ seconds to fetch just the last 200
+   entries out of a 300,000-line/74MB simulated log. Fixed by reading
+   backward from the end of the file in chunks instead of the whole thing
+   (now sub-millisecond for the common case).
+4. The sidebar's file list rendered every vault entry as a real,
+   permanently-mounted DOM node with no windowing — fine at dozens of
+   files, a real problem at thousands. Fixed with the same
+   `@tanstack/react-virtual` windowing the Mass Edit grid already used,
+   so only the visible slice (~30 nodes) is ever mounted regardless of
+   vault size.
+
+One more, lower-severity fix from the same pass: a bulk drop of many
+files into an already-open vault (a migration, a network-drive resync)
+used to spawn a brand-new OS thread per debounced file-change event with
+no cap. Replaced with a single scheduler thread plus a small fixed
+worker pool, so a burst of thousands of events no longer scales thread
+count with burst size.
+
+**What's confirmed working correctly at 15,000 files, mixed `.doc`/
+`.docx`:** indexing (all 15,000 entries land with correct
+spec_number/customer/revision, `.doc` files correctly flagged
+unsupported without attempting to parse them), the sidebar, Mass Edit
+view loading, single-cell edits, and memory footprint (~800MB resident
+holding all 13,500 parsed specs — actually *lower* than before
+parallelizing indexing, likely because work distributed across
+short-lived worker processes leaves less garbage in the long-lived main
+process's heap than parsing everything in one process would).
+
+**What this pass did not fix, and is worth knowing about before relying
+on this at that scale day-to-day:**
+- Converting `.doc` files to `.docx` is still one-at-a-time from the
+  sidebar. Fine for occasional legacy files; a real gap if a 15,000-file
+  archive has hundreds or thousands of `.doc` files needing conversion —
+  a batch "convert all" endpoint would be the natural next step.
+- `/views/{section}` still returns every matching row across the whole
+  vault in one response (Bill of Materials at 15,000 files was a 64MB
+  JSON payload). The Mass Edit grid's own rendering is virtualized and
+  handles that fine once loaded, but the fetch itself is a real,
+  un-paginated cost every time that view is opened or refreshed. True
+  pagination would need reworking how the grid's client-side sort/filter/
+  group-by operate (currently over the full row set) and was out of scope
+  for this pass.
+- No progress indicator during a multi-minute cold open — just an
+  indefinite "Opening…" label. Tolerable at ~3 minutes; was a real risk
+  of looking hung at the old ~17-minute figure. Worth adding if vaults
+  routinely open in the multi-minute range in practice.
 
 ## Known limitations (v1 scaffold)
 

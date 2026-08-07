@@ -17,6 +17,8 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -54,6 +56,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Mass-edit views over a large vault can be tens of MB of repetitive JSON
+# (see get_view below) -- compress it. Doesn't help the same-machine dev
+# setup, but matters once the frontend and backend aren't on localhost.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 def _vault() -> Vault:
@@ -215,7 +221,7 @@ def open_vault(req: OpenVaultRequest) -> dict:
 
 
 @app.get("/vault")
-def list_vault() -> dict:
+def list_vault() -> JSONResponse:
     vault = _vault()
     entries = []
     for e in vault.entries():
@@ -230,7 +236,13 @@ def list_vault() -> dict:
                 "warnings": e.spec.warnings if e.spec else [],
             }
         )
-    return {"root": vault.root, "entries": entries}
+    # Returned as a raw JSONResponse rather than a plain dict: at thousands
+    # of vault entries, FastAPI's default response path would otherwise run
+    # every value through jsonable_encoder's recursive isinstance checks even
+    # though this is already all plain str/bool/list -- measurably slower
+    # for no benefit at this size (see get_view below for the same fix on
+    # the much larger mass-edit view payload, where it matters even more).
+    return JSONResponse({"root": vault.root, "entries": entries})
 
 
 @app.get("/spec")
@@ -255,16 +267,25 @@ def list_views() -> dict:
 
 
 @app.get("/views/{section}")
-def get_view(section: str) -> dict:
+def get_view(section: str) -> JSONResponse:
     if section not in ALL_SECTIONS:
         raise HTTPException(status_code=404, detail=f"Unknown section: {section}")
     rows = build_view(_vault().entries(), section)
-    return {
-        "section": section,
-        "rows": rows,
-        "editable": is_view_editable(section),
-        "readonly_columns": readonly_columns_for(section),
-    }
+    # A raw JSONResponse, not a plain dict: this can be tens of thousands of
+    # rows at a large vault (e.g. Bill of Materials unions Primary +
+    # Secondary across every spec), and FastAPI's default response path
+    # would run jsonable_encoder recursively over every cell even though
+    # build_view() already returns plain strings -- confirmed empirically
+    # to matter: ~7.6s to build+serialize a 15,000-file vault's Bill of
+    # Materials view before this fix.
+    return JSONResponse(
+        {
+            "section": section,
+            "rows": rows,
+            "editable": is_view_editable(section),
+            "readonly_columns": readonly_columns_for(section),
+        }
+    )
 
 
 @app.put("/spec/cell")

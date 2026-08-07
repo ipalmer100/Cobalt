@@ -62,7 +62,7 @@
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 .sidebar-root {
@@ -76,14 +76,16 @@
 }
 
 .sidebar-list {
-  display: flex;
-  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
 }
 
 .sidebar-item {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: center;
   gap: 2px;
   padding: 8px 12px;
   border: none;
@@ -93,6 +95,11 @@
   text-align: left;
   cursor: pointer;
   font-size: 13px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .sidebar-item:hover {

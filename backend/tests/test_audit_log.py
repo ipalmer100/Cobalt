@@ -1,4 +1,4 @@
-from specwrite.audit_log import append_entry, read_entries
+from specwrite.audit_log import _TAIL_CHUNK_SIZE, append_entry, read_entries
 
 
 def test_append_and_read_entries(tmp_path):
@@ -44,3 +44,40 @@ def test_corrupted_line_is_skipped_not_fatal(tmp_path):
 
     entries = read_entries(str(tmp_path))
     assert len(entries) == 2
+
+
+def test_read_entries_tail_read_spans_multiple_chunks(tmp_path):
+    """read_entries reads backward from the end of the file in fixed-size
+    chunks (_read_tail_lines) rather than the whole file -- exercise a log
+    big enough that satisfying a limit requires more than one chunk read,
+    to catch any off-by-one at a chunk boundary."""
+    n = 5000  # short lines, but enough that many chunk-sized reads are needed
+    for i in range(n):
+        append_entry(str(tmp_path), "write_cell", "Isaac", n=i)
+
+    log_path = tmp_path / ".specwrite" / "audit_log.jsonl"
+    assert log_path.stat().st_size > _TAIL_CHUNK_SIZE * 3  # confirms multiple chunks are actually exercised
+
+    entries = read_entries(str(tmp_path), limit=250)
+    assert [e["n"] for e in entries] == list(range(n - 1, n - 251, -1))  # most recent first, contiguous, no gaps
+
+
+def test_read_entries_limit_larger_than_log_returns_everything(tmp_path):
+    for i in range(10):
+        append_entry(str(tmp_path), "write_cell", "Isaac", n=i)
+    entries = read_entries(str(tmp_path), limit=10_000)
+    assert len(entries) == 10
+    assert entries[0]["n"] == 9
+
+
+def test_read_entries_handles_a_single_line_larger_than_one_chunk(tmp_path):
+    """A pathological giant single entry (e.g. a fill-handle batch touching
+    hundreds of rows, embedded as one JSON line) must not break the
+    backward chunk-boundary logic even when it alone exceeds the chunk size."""
+    append_entry(str(tmp_path), "write_cell", "Isaac", n=0)
+    append_entry(str(tmp_path), "fill_column", "Isaac", edits=["x" * _TAIL_CHUNK_SIZE * 2])
+    append_entry(str(tmp_path), "write_cell", "Isaac", n=2)
+
+    entries = read_entries(str(tmp_path), limit=10)
+    assert [e.get("action") for e in entries] == ["write_cell", "fill_column", "write_cell"]
+    assert entries[2]["n"] == 0
