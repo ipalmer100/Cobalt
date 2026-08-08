@@ -329,7 +329,8 @@ table.records-table.editable td.saving {
   background: rgba(124, 58, 237, 0.15);
 }
 
-table.records-table.editable input {
+table.records-table.editable input,
+table.records-table.editable textarea.cell-editor {
   width: 100%;
   border: none;
   background: transparent;
@@ -338,9 +339,21 @@ table.records-table.editable input {
   padding: 2px;
 }
 
-table.records-table.editable input:focus {
+table.records-table.editable input:focus,
+table.records-table.editable textarea.cell-editor:focus {
   outline: 1px solid var(--accent);
   background: var(--bg);
+}
+
+/* Multi-line cell values are common in real specs, so the editor is a
+   textarea -- keep it visually identical to the old single-line input
+   (same font, no resize grip, no scrollbar until it exceeds its rows). */
+table.records-table.editable textarea.cell-editor {
+  font-family: inherit;
+  line-height: 1.35;
+  resize: vertical;
+  display: block;
+  overflow-wrap: anywhere;
 }
 
 .th-inner {

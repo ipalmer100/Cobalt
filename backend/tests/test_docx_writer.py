@@ -114,3 +114,19 @@ def test_write_edits_batch_is_faster_than_sequential_single_writes(tmp_path):
     batch_time = time.perf_counter() - t0
 
     assert batch_time < sequential_time / 2
+
+
+def test_write_cell_preserves_embedded_newlines(tmp_path):
+    """~10% of cells in real specs are multi-line (a BOM "Raw Material"
+    naming both sides of a film, a splice instruction, an address). Writing
+    such a value must keep its line breaks -- collapsing them silently
+    rewrites the meaning of the spec."""
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path)
+
+    multiline = "50g PET-Non Coated Side\n50g PET-PVDC Coated Side"
+    write_cell(path, "Bill of Materials", 1, 1, multiline)
+
+    value = parse_document(path).tables["Bill of Materials"].rows[1][1]
+    assert value == multiline
+    assert "\n" in value

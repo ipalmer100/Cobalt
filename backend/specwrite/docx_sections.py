@@ -46,6 +46,19 @@ def _normalize(text: str) -> str:
 
 _NORMALIZED_BODY_SECTIONS = {_normalize(name): name for name in BODY_SECTIONS}
 
+# Real specs in the archive title the same section differently depending on
+# their vintage/product line -- a pouch spec's "Slitting Instructions" is the
+# roll spec's "Slitting Information". Without these the section's table is
+# invisible to the app even though it's right there in the document.
+_SECTION_ALIASES = {
+    "slitting instructions": "Slitting Information",
+    "packing specifications": "Packing Information",
+    "packaging information": "Packing Information",
+}
+
+for _alias, _canonical in _SECTION_ALIASES.items():
+    _NORMALIZED_BODY_SECTIONS[_alias] = _canonical
+
 
 def _table_to_rows(table: Table) -> list[list[str]]:
     rows: list[list[str]] = []
@@ -133,6 +146,25 @@ def extract_product_description(doc: Document) -> ParsedTable:
     )
 
 
+def _spec_number_from_fields(pd_fields: dict[str, str]) -> str:
+    """The org's own spec number, whatever the label calls it.
+
+    Newer specs label it "Spec #"; ones written before the Sonoco->Toppan
+    rename say "Sonoco Spec #", and a post-rename spec could equally say
+    "Toppan Spec #". "Customer Spec #" is a *different* number (the
+    customer's own, often blank) and must never be mistaken for ours.
+    """
+    for label in ("Spec #", "Sonoco Spec #", "Toppan Spec #"):
+        value = pd_fields.get(label, "").strip()
+        if value:
+            return value
+    for label, value in pd_fields.items():
+        if label.strip().lower().endswith("spec #") and not label.strip().lower().startswith("customer"):
+            if value.strip():
+                return value.strip()
+    return ""
+
+
 def parse_document(path: str) -> Spec:
     doc = Document(path)
 
@@ -147,7 +179,7 @@ def parse_document(path: str) -> Spec:
             warnings.append(f"Section not found: {name}")
 
     pd_fields = tables[PRODUCT_DESCRIPTION].fields()
-    spec_number = pd_fields.get("Spec #", "")
+    spec_number = _spec_number_from_fields(pd_fields)
     customer = pd_fields.get("Customer", "")
     revision_number = pd_fields.get("Revision #", "")
 

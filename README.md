@@ -299,6 +299,19 @@ on this at that scale day-to-day:**
 - One row in Slitting Information sometimes stacks two labels
   (`Core Tags:` / `Splice Code:`) inside a single physical cell; the
   parser currently reads that as one combined field instead of two.
+- **A spec containing two of the same section is only partly readable.**
+  FR0282 (Daisy Sour Cream) has both `Process Routing - Duplex` and
+  `Process Routing - Triplex`, and likewise two `Physical Attributes &
+  Testing` tables (33 rows each), because one document covers two
+  process paths. The data model holds one table per section name, so
+  neither variant is picked up and the section reports "not found"
+  rather than silently showing one and hiding the other. Supporting this
+  properly means letting a spec carry per-variant sections, which also
+  changes the Mass Edit view list from a fixed set of section names into
+  something per-spec — a product decision, not just a parser change.
+  Section *aliases* (a pouch spec's `Slitting Instructions` = a roll
+  spec's `Slitting Information`, `Packing Specifications` = `Packing
+  Information`) are handled and those tables read/write normally.
 - `.doc` conversion (automatic, see "Legacy `.doc` handling" above)
   requires LibreOffice installed and functional on the machine running
   the backend (`soffice` on PATH, or bundled into the packaged desktop

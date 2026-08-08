@@ -581,18 +581,41 @@ interface EditableCellInputProps {
 // prop whenever it changes externally, without clobbering an in-progress
 // keystroke (the effect only fires when `value` itself changes, not on
 // every render).
+// A <textarea>, not an <input>: real spec cells are routinely multi-line
+// (a BOM "Raw Material" naming both sides of a film, a Slitting splice
+// instruction, a customer address). An <input> silently drops the newlines
+// the moment its value is set, so editing such a cell -- even fixing one
+// typo -- used to collapse it to a single line and save that back over the
+// document. Enter commits (matching the old single-line feel);
+// Shift+Enter inserts a line break; Escape reverts.
 function EditableCellInput({ value, onFocus, onCommit }: EditableCellInputProps) {
   const [local, setLocal] = useState(value);
+  const ref = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     setLocal(value);
   }, [value]);
 
+  const rows = Math.min(local.split("\n").length, 6);
+
   return (
-    <input
+    <textarea
+      ref={ref}
+      className="cell-editor"
+      rows={rows}
       value={local}
       onChange={(e) => setLocal(e.target.value)}
       onFocus={onFocus}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          ref.current?.blur();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setLocal(value);
+          ref.current?.blur();
+        }
+      }}
       onBlur={() => {
         if (local !== value) onCommit(local);
       }}
