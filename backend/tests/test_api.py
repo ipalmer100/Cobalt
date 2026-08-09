@@ -180,7 +180,7 @@ def test_cannot_write_cell_into_revision_history(client, tmp_path):
 
     # confirm nothing actually changed on disk
     r = client.get("/spec", params={"path": path})
-    records = r.json()["sections"]["Revision History"]["rows"]
+    records = r.json()["sections"]["Revision History"][0]["rows"]
     assert records[1][3] == "Spec created."
 
 
@@ -338,9 +338,9 @@ def test_batch_cell_write_spans_multiple_files(client, tmp_path):
     assert r.json()["count"] == 2
 
     r = client.get("/spec", params={"path": path_a})
-    assert r.json()["sections"]["Bill of Materials"]["rows"][1][2] == "Fill A"
+    assert r.json()["sections"]["Bill of Materials"][0]["rows"][1][2] == "Fill A"
     r = client.get("/spec", params={"path": path_b})
-    assert r.json()["sections"]["Bill of Materials"]["rows"][1][2] == "Fill B"
+    assert r.json()["sections"]["Bill of Materials"][0]["rows"][1][2] == "Fill B"
 
 
 def test_batch_cell_write_field_kind(client, tmp_path):
@@ -355,7 +355,7 @@ def test_batch_cell_write_field_kind(client, tmp_path):
     assert r.status_code == 200
 
     r = client.get("/spec", params={"path": path})
-    assert r.json()["sections"]["Locations"]["fields"]["Facility"] == "New Plant"
+    assert r.json()["sections"]["Locations"][0]["fields"]["Facility"] == "New Plant"
 
 
 def test_batch_cell_write_rejects_whole_batch_if_any_edit_locked(client, tmp_path):
@@ -378,7 +378,7 @@ def test_batch_cell_write_rejects_whole_batch_if_any_edit_locked(client, tmp_pat
 
     # confirm the FIRST (otherwise-valid) edit in the batch did not land either
     r = client.get("/spec", params={"path": path})
-    assert r.json()["sections"]["Bill of Materials"]["rows"][1][2] == "Flex Films"
+    assert r.json()["sections"]["Bill of Materials"][0]["rows"][1][2] == "Flex Films"
 
 
 def test_batch_cell_write_logs_one_audit_entry_per_file_not_per_cell(client, tmp_path):

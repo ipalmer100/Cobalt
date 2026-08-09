@@ -20,8 +20,11 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
+// Includes table_index because a spec can hold several tables for one
+// section (Duplex + Triplex Process Routing) -- without it their row 1s
+// collide and an edit to one would patch/overwrite the other.
 function rowKey(row: ViewRow): string {
-  return `${row["File Path"]}|${row._source.section}|${row._source.row}`;
+  return `${row["File Path"]}|${row._source.section}|${row._source.table_index}|${row._source.row}`;
 }
 
 function cellText(row: ViewRow, column: string): string {
@@ -49,6 +52,7 @@ function compareValues(a: string, b: string): number {
 // `rows` array) is wasted work at thousands of rows.
 function columnsFor(rows: ViewRow[]): string[] {
   const trailing: string[] = [];
+  if (rows.some((r) => "Variant" in r)) trailing.push("Variant");
   if (rows.some((r) => "Material Type" in r)) trailing.push("Material Type");
   trailing.push("File Path");
 
@@ -212,9 +216,9 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
       if (source.kind === "record") {
         const colIndex = source.header_row?.indexOf(column) ?? -1;
         if (colIndex < 0) throw new Error(`Column "${column}" not found in source table`);
-        await writeCell(row["File Path"] as string, source.section, source.row, colIndex, value, who);
+        await writeCell(row["File Path"] as string, source.section, source.row, colIndex, value, who, source.table_index);
       } else {
-        await writeField(row["File Path"] as string, source.section, column, value, who);
+        await writeField(row["File Path"] as string, source.section, column, value, who, source.table_index);
       }
       patchRows(new Map([[key, { [column]: value }]]));
     } catch (e) {
@@ -242,9 +246,24 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
       if (source.kind === "record") {
         const colIndex = source.header_row?.indexOf(drag.column) ?? -1;
         if (colIndex < 0) continue;
-        edits.push({ path, section: source.section, kind: "record", row: source.row, col: colIndex, value: drag.sourceValue });
+        edits.push({
+          path,
+          section: source.section,
+          kind: "record",
+          row: source.row,
+          col: colIndex,
+          value: drag.sourceValue,
+          table_index: source.table_index,
+        });
       } else {
-        edits.push({ path, section: source.section, kind: "field", label: drag.column, value: drag.sourceValue });
+        edits.push({
+          path,
+          section: source.section,
+          kind: "field",
+          label: drag.column,
+          value: drag.sourceValue,
+          table_index: source.table_index,
+        });
       }
       patches.set(rowKey(row), { [drag.column]: drag.sourceValue });
     }

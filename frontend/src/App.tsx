@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import { connectLiveUpdates, getSpec, listVault, listViews, openVault } from "./api";
+import { connectLiveUpdates, getExceptions, getSpec, listVault, listViews, openVault } from "./api";
 import Sidebar from "./components/Sidebar";
 import SpecDetail from "./components/SpecDetail";
 import MassEditGrid from "./components/MassEditGrid";
 import NewSpecModal from "./components/NewSpecModal";
 import AuditLogView from "./components/AuditLogView";
+import ExceptionsView from "./components/ExceptionsView";
 import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
 import "./App.css";
 
-type Mode = "detail" | "mass-edit" | "audit-log";
+type Mode = "detail" | "mass-edit" | "audit-log" | "exceptions";
 
 const WHO_STORAGE_KEY = "specwrite.who";
 
@@ -27,16 +28,28 @@ export default function App() {
   const [opening, setOpening] = useState(false);
   const [showNewSpec, setShowNewSpec] = useState(false);
   const [who, setWho] = useState(() => localStorage.getItem(WHO_STORAGE_KEY) ?? "");
+  const [pendingExceptions, setPendingExceptions] = useState(0);
 
   function updateWho(value: string) {
     setWho(value);
     localStorage.setItem(WHO_STORAGE_KEY, value);
   }
 
+  async function refreshExceptionCount() {
+    try {
+      const res = await getExceptions();
+      setPendingExceptions(res.pending.length);
+    } catch {
+      // a vault that isn't open yet simply has nothing to triage
+      setPendingExceptions(0);
+    }
+  }
+
   async function refreshVaultList() {
     try {
       const res = await listVault();
       setEntries(res.entries);
+      refreshExceptionCount();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -148,6 +161,14 @@ export default function App() {
           <button className={mode === "audit-log" ? "active" : ""} onClick={() => setMode("audit-log")}>
             Audit Log
           </button>
+          <button
+            className={mode === "exceptions" ? "active" : ""}
+            onClick={() => setMode("exceptions")}
+            title="Tables that need a human to say which section they belong to"
+          >
+            Exceptions
+            {pendingExceptions > 0 && <span className="tab-badge">{pendingExceptions}</span>}
+          </button>
           {mode === "mass-edit" && (
             <select value={selectedView} onChange={(e) => setSelectedView(e.target.value)}>
               {views.map((v) => (
@@ -178,6 +199,17 @@ export default function App() {
         {mode === "mass-edit" && <MassEditGrid section={selectedView} refreshToken={refreshToken} who={who} />}
 
         {mode === "audit-log" && <AuditLogView refreshToken={refreshToken} />}
+
+        {mode === "exceptions" && (
+          <ExceptionsView
+            refreshToken={refreshToken}
+            who={who}
+            onResolved={() => {
+              refreshVaultList();
+              setRefreshToken((t) => t + 1);
+            }}
+          />
+        )}
       </div>
     </div>
   );

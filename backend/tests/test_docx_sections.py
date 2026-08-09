@@ -22,7 +22,7 @@ def test_records_shape_for_bom(tmp_path):
     build_sample_spec_docx(path)
     spec = parse_document(path)
 
-    bom = spec.tables["Bill of Materials"]
+    bom = spec.primary("Bill of Materials")
     assert bom.shape == TableShape.RECORDS
     assert bom.header_row == ["Caliper (mils)", "Raw Material", "Supplier", "Designation", "Part Number"]
     records = bom.records()
@@ -36,7 +36,7 @@ def test_fields_shape_for_locations(tmp_path):
     build_sample_spec_docx(path)
     spec = parse_document(path)
 
-    locations = spec.tables["Locations"]
+    locations = spec.primary("Locations")
     assert locations.shape == TableShape.FIELDS
     fields = locations.fields()
     assert fields["Customer Location"] == "Test Customer"
@@ -48,7 +48,7 @@ def test_product_description_from_header_with_merged_cell(tmp_path):
     build_sample_spec_docx(path)
     spec = parse_document(path)
 
-    pd = spec.tables["Product Description"]
+    pd = spec.primary("Product Description")
     assert pd.location == "header"
     fields = pd.fields()
     assert fields["Spec #"] == "SW0001"
@@ -63,7 +63,7 @@ def test_revision_history_records(tmp_path):
     build_sample_spec_docx(path)
     spec = parse_document(path)
 
-    rev = spec.tables["Revision History"]
+    rev = spec.primary("Revision History")
     assert rev.shape == TableShape.RECORDS
     records = rev.records()
     assert records[0]["Revision #"] == "01"
@@ -137,4 +137,4 @@ def test_section_title_aliases_are_recognized(tmp_path):
     spec = parse_document(path)
     assert "Slitting Information" in spec.tables
     assert "Packing Information" in spec.tables
-    assert spec.tables["Slitting Information"].fields()["Slit Width"] == "20.25\""
+    assert spec.primary("Slitting Information").fields()["Slit Width"] == "20.25\""

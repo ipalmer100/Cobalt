@@ -113,45 +113,56 @@ def _next_revision_number(previous: str) -> str:
     return incremented
 
 
-def _resolve_table(doc: Document, section: str) -> Table:
+def _resolve_table(doc: Document, section: str, table_index: int | None = None) -> Table:
     """Locate a section's table in an already-open Document, the same way
-    the parser does, so writes target exactly what the reader last showed."""
+    the parser does, so writes target exactly what the reader last showed.
+
+    ``table_index`` disambiguates when a spec holds more than one table for
+    the section (a Duplex and a Triplex Process Routing). Section name alone
+    would silently write every such row into whichever table came first, so
+    the mass-edit grid always carries the index the row was read from.
+    """
     if section == PRODUCT_DESCRIPTION:
         parsed = extract_product_description(doc)
         if parsed.location == "missing":
             raise ValueError(f"{PRODUCT_DESCRIPTION} table not found")
         return doc.sections[0].header.tables[0] if parsed.location == "header" else doc.tables[parsed.table_index]
 
-    body_tables = find_body_section_tables(doc)
+    if table_index is not None and table_index >= 0:
+        if table_index >= len(doc.tables):
+            raise ValueError(f"Table index {table_index} out of range for {section}")
+        return doc.tables[table_index]
+
+    body_tables, _ = find_body_section_tables(doc)
     parsed = body_tables.get(section)
-    if parsed is None:
+    if not parsed:
         raise ValueError(f"Section not found: {section}")
-    return doc.tables[parsed.table_index]
+    return doc.tables[parsed[0].table_index]
 
 
-def write_cell(path: str, section: str, row: int, col: int, value: str) -> None:
+def write_cell(path: str, section: str, row: int, col: int, value: str, table_index: int | None = None) -> None:
     """Open a spec, write one cell by address in the named section, save.
     The mass-edit grid's primary write path."""
     doc = Document(path)
-    table = _resolve_table(doc, section)
+    table = _resolve_table(doc, section, table_index)
     write_record_cell(table, row, col, value)
     doc.save(path)
 
 
-def write_field_value(path: str, section: str, label: str, value: str) -> bool:
+def write_field_value(path: str, section: str, label: str, value: str, table_index: int | None = None) -> bool:
     """Open a spec, write one ``Label:`` field's value in the named section, save."""
     doc = Document(path)
-    table = _resolve_table(doc, section)
+    table = _resolve_table(doc, section, table_index)
     found = write_field(table, label, value)
     if found:
         doc.save(path)
     return found
 
 
-def append_row(path: str, section: str, values: list[str]) -> None:
+def append_row(path: str, section: str, values: list[str], table_index: int | None = None) -> None:
     """Open a spec, append a data row to a RECORDS-shape section, save."""
     doc = Document(path)
-    table = _resolve_table(doc, section)
+    table = _resolve_table(doc, section, table_index)
     add_record_row(table, values)
     doc.save(path)
 
@@ -164,7 +175,7 @@ def write_edits_batch(edits: list[dict]) -> None:
     of paying a full parse+serialize round trip per cell.
 
     Each edit dict: {"path", "section", "kind": "record"|"field",
-    "row", "col", "label", "value"}.
+    "row", "col", "label", "value", "table_index"}.
     """
     by_path: dict[str, list[dict]] = {}
     for edit in edits:
@@ -172,13 +183,15 @@ def write_edits_batch(edits: list[dict]) -> None:
 
     for path, path_edits in by_path.items():
         doc = Document(path)
-        table_cache: dict[str, Table] = {}
+        table_cache: dict[tuple[str, int | None], Table] = {}
         for edit in path_edits:
             section = edit["section"]
-            table = table_cache.get(section)
+            table_index = edit.get("table_index")
+            cache_key = (section, table_index)
+            table = table_cache.get(cache_key)
             if table is None:
-                table = _resolve_table(doc, section)
-                table_cache[section] = table
+                table = _resolve_table(doc, section, table_index)
+                table_cache[cache_key] = table
             if edit["kind"] == "record":
                 write_record_cell(table, edit["row"], edit["col"], edit["value"])
             else:
@@ -186,12 +199,12 @@ def write_edits_batch(edits: list[dict]) -> None:
         doc.save(path)
 
 
-def clear_records(path: str, section: str) -> None:
+def clear_records(path: str, section: str, table_index: int | None = None) -> None:
     """Remove every data row from a RECORDS-shape section, keeping only
     the header row. Used when spinning up a new spec (duplicate or blank
     template) so its Revision History doesn't inherit another spec's log."""
     doc = Document(path)
-    table = _resolve_table(doc, section)
+    table = _resolve_table(doc, section, table_index)
     for row in list(table.rows[1:]):
         row._tr.getparent().remove(row._tr)
     doc.save(path)
@@ -202,12 +215,12 @@ def apply_revision(path: str, who: str, revision_text: str, revision_date: date_
     Description. Returns the new revision number. Generalizes
     wrdRevision.bas's ``tbl.Rows.Add`` + header cell-address write."""
     doc = Document(path)
-    body_tables = find_body_section_tables(doc)
-    rev_table_parsed = body_tables.get("Revision History")
-    if rev_table_parsed is None:
+    body_tables, _ = find_body_section_tables(doc)
+    rev_tables = body_tables.get("Revision History")
+    if not rev_tables:
         raise ValueError("Revision History section not found")
 
-    rev_table = doc.tables[rev_table_parsed.table_index]
+    rev_table = doc.tables[rev_tables[0].table_index]
     last_row_values = [c.text.strip() for c in rev_table.rows[-1].cells]
     previous_rev = last_row_values[0] if last_row_values else ""
     new_rev = _next_revision_number(previous_rev)

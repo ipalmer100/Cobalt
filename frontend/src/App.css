@@ -729,3 +729,121 @@ td.fill-preview {
   color: white;
   border-color: var(--accent);
 }
+
+/* --- Exception queue: tables the parser wouldn't guess a section for --- */
+
+.tab-badge {
+  display: inline-block;
+  min-width: 16px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.exceptions-view {
+  padding: 16px 20px 40px;
+  overflow-y: auto;
+}
+
+.exceptions-intro {
+  max-width: 70ch;
+  margin: 0 0 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.exception-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--bg-sidebar);
+}
+
+.exception-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.exception-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.exception-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.exception-specs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.exception-spec-chip {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.exception-preview {
+  max-height: 160px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin-bottom: 10px;
+}
+
+.exception-preview td {
+  font-size: 11px;
+  max-width: 220px;
+}
+
+.exception-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.exceptions-resolved {
+  margin-top: 28px;
+}
+
+.exceptions-resolved h3 {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+/* Which of a spec's several same-section tables this one is ("Duplex"). */
+.section-variant {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  background: var(--border);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}

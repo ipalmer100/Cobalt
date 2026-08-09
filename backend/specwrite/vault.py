@@ -23,10 +23,12 @@ from __future__ import annotations
 import gc
 import os
 import queue
+import re
 import threading
 import time
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Callable
 
@@ -37,6 +39,7 @@ from .audit_log import append_entry
 from .doc_conversion import ConversionError, convert_doc_to_docx
 from .docx_sections import parse_document
 from .models import Spec
+from .section_mappings import load_mappings, overrides_for_parser
 
 VaultListener = Callable[[str], None]  # called with the changed file's path
 
@@ -76,13 +79,13 @@ def _docx_sibling(doc_path: str) -> str:
 # converted, this run or an earlier one): the .docx is the real entry now,
 # indexed separately when _walk() reaches it, so the .doc itself is simply
 # not shown.
-def _build_entry(path: str) -> VaultEntry | None:
+def _build_entry(path: str, overrides: dict[str, str] | None = None) -> VaultEntry | None:
     if path.lower().endswith(".doc"):
         if Path(_docx_sibling(path)).exists():
             return None
         return VaultEntry(path=path, spec=None, error=_CONVERTING_MESSAGE, supported=False)
     try:
-        spec = parse_document(path)
+        spec = parse_document(path, overrides)
         return VaultEntry(path=path, spec=spec, error=None, supported=True)
     except Exception as exc:  # noqa: BLE001 - a bad file shouldn't kill the vault
         return VaultEntry(path=path, spec=None, error=str(exc), supported=False)
@@ -114,6 +117,10 @@ class Vault:
         self._conversions_in_flight: set[str] = set()
         self._converter_thread: threading.Thread | None = None
         self._converter_stop = threading.Event()
+        # Human allocations from the exception queue (normalized heading ->
+        # canonical section). Loaded from the vault so they're shared by
+        # everyone who opens the folder, and re-applied on every reparse.
+        self._overrides: dict[str, str] = {}
 
     # -- public API ---------------------------------------------------
 
@@ -122,6 +129,7 @@ class Vault:
         Mirrors "select a folder as your vault" in Obsidian: instant read
         of everything already there, then instant reaction to anything
         that changes afterward."""
+        self._overrides = overrides_for_parser(load_mappings(self.root))
         self._full_index()
         self._start_watching()
 
@@ -150,6 +158,50 @@ class Vault:
         with self._lock:
             return self._entries.get(str(Path(path).resolve()))
 
+    def unclassified(self) -> list[dict]:
+        """Every table the parser wasn't confident enough to file under one
+        of the 11 sections, grouped by heading so a heading shared across
+        hundreds of specs is one decision rather than hundreds."""
+        groups: dict[str, dict] = {}
+        for entry in self.entries():
+            if entry.spec is None:
+                continue
+            for table in entry.spec.unclassified:
+                key = _normalize_heading(table.heading)
+                group = groups.get(key)
+                if group is None:
+                    group = {
+                        "key": key,
+                        "heading": table.heading,
+                        "shape": table.shape.value,
+                        "header_row": table.header_row,
+                        "preview": table.preview,
+                        "specs": [],
+                    }
+                    groups[key] = group
+                group["specs"].append(
+                    {
+                        "path": entry.path,
+                        "spec_number": entry.spec.spec_number,
+                        "table_index": table.table_index,
+                        "row_count": table.row_count,
+                    }
+                )
+        out = list(groups.values())
+        for group in out:
+            group["spec_count"] = len(group["specs"])
+        out.sort(key=lambda g: (-g["spec_count"], g["heading"].lower()))
+        return out
+
+    def reload_mappings(self) -> None:
+        """Re-read the vault's heading allocations and reparse everything so
+        a decision made in the exception queue takes effect immediately."""
+        self._overrides = overrides_for_parser(load_mappings(self.root))
+        for path in [e.path for e in self.entries() if e.supported]:
+            self._index_one(path)
+        for listener in self._listeners:
+            listener(self.root)
+
     def subscribe(self, listener: VaultListener) -> None:
         self._listeners.append(listener)
 
@@ -176,7 +228,7 @@ class Vault:
 
         if len(paths) < _PARALLEL_INDEX_THRESHOLD:
             for file_path in paths:
-                self._store_and_maybe_enqueue(_build_entry(file_path))
+                self._store_and_maybe_enqueue(_build_entry(file_path, self._overrides))
         else:
             self._full_index_parallel(paths)
 
@@ -204,7 +256,8 @@ class Vault:
         # batch behind them.
         chunksize = max(1, min(50, len(paths) // (worker_count * 4)))
         with ProcessPoolExecutor(max_workers=worker_count) as executor:
-            for entry in executor.map(_build_entry, paths, chunksize=chunksize):
+            worker = partial(_build_entry, overrides=self._overrides)
+            for entry in executor.map(worker, paths, chunksize=chunksize):
                 self._store_and_maybe_enqueue(entry)
 
     def _store(self, entry: VaultEntry | None) -> None:
@@ -236,7 +289,7 @@ class Vault:
             with self._lock:
                 self._entries.pop(path, None)
             return
-        entry = _build_entry(path)
+        entry = _build_entry(path, self._overrides)
         if entry is None:
             # A .doc whose .docx sibling now exists (e.g. this run's
             # auto-conversion just finished, or someone else created a
@@ -367,3 +420,7 @@ class _Handler(FileSystemEventHandler):
         if not event.is_directory:
             self._maybe_handle(event.src_path)
             self._maybe_handle(event.dest_path)
+
+
+def _normalize_heading(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip().lower()

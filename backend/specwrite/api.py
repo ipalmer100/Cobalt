@@ -24,7 +24,8 @@ from pydantic import BaseModel
 
 from .audit_log import append_entry, read_entries
 from .creation import CreationError, create_blank_spec, duplicate_spec
-from .docx_sections import PRODUCT_DESCRIPTION, ALL_SECTIONS
+from .docx_sections import ALL_SECTIONS, IGNORE, PRODUCT_DESCRIPTION
+from .section_mappings import delete_mapping, load_mappings, save_mapping
 from .docx_writer import append_row, apply_revision, write_cell, write_edits_batch, write_field_value
 from .vault import Vault
 from .views import (
@@ -97,23 +98,39 @@ def _spec_number_for(vault: Vault, path: str) -> str | None:
     return entry.spec.spec_number if entry and entry.spec else None
 
 
-def _current_cell_value(vault: Vault, path: str, section: str, row: int, col: int) -> str | None:
-    """Best-effort lookup of a cell's value before it's overwritten, using
-    the vault's already-parsed in-memory copy (no extra disk read)."""
+def _pick_table(vault: Vault, path: str, section: str, table_index: int | None):
+    """The specific table a write addresses. A spec can hold several tables
+    for one section, so table_index (carried by every mass-edit row) decides
+    which -- falling back to the first only when the caller didn't say."""
     entry = vault.get(path)
     if not entry or not entry.spec:
         return None
-    table = entry.spec.tables.get(section)
+    tables = entry.spec.tables.get(section) or []
+    if not tables:
+        return None
+    if table_index is not None and table_index >= 0:
+        for table in tables:
+            if table.table_index == table_index:
+                return table
+        return None
+    return tables[0]
+
+
+def _current_cell_value(
+    vault: Vault, path: str, section: str, row: int, col: int, table_index: int | None = None
+) -> str | None:
+    """Best-effort lookup of a cell's value before it's overwritten, using
+    the vault's already-parsed in-memory copy (no extra disk read)."""
+    table = _pick_table(vault, path, section, table_index)
     if not table or row >= len(table.rows) or col >= len(table.rows[row]):
         return None
     return table.rows[row][col]
 
 
-def _current_field_value(vault: Vault, path: str, section: str, label: str) -> str | None:
-    entry = vault.get(path)
-    if not entry or not entry.spec:
-        return None
-    table = entry.spec.tables.get(section)
+def _current_field_value(
+    vault: Vault, path: str, section: str, label: str, table_index: int | None = None
+) -> str | None:
+    table = _pick_table(vault, path, section, table_index)
     if not table:
         return None
     target = label.strip().rstrip(":").strip().lower()
@@ -149,6 +166,7 @@ class WriteCellRequest(BaseModel):
     col: int
     value: str
     who: str = ""
+    table_index: int | None = None
 
 
 class WriteFieldRequest(BaseModel):
@@ -157,6 +175,7 @@ class WriteFieldRequest(BaseModel):
     label: str
     value: str
     who: str = ""
+    table_index: int | None = None
 
 
 class AppendRowRequest(BaseModel):
@@ -164,6 +183,7 @@ class AppendRowRequest(BaseModel):
     section: str
     values: list[str]
     who: str = ""
+    table_index: int | None = None
 
 
 class BatchEditItem(BaseModel):
@@ -174,6 +194,7 @@ class BatchEditItem(BaseModel):
     col: int | None = None
     label: str | None = None
     value: str
+    table_index: int | None = None
 
 
 class WriteCellsBatchRequest(BaseModel):
@@ -287,9 +308,9 @@ def get_view(section: str) -> JSONResponse:
 def put_cell(req: WriteCellRequest) -> dict:
     vault = _vault()
     _require_not_revision_locked(req.section)
-    old_value = _current_cell_value(vault, req.path, req.section, req.row, req.col)
+    old_value = _current_cell_value(vault, req.path, req.section, req.row, req.col, req.table_index)
     try:
-        write_cell(req.path, req.section, req.row, req.col, req.value)
+        write_cell(req.path, req.section, req.row, req.col, req.value, req.table_index)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.path)
@@ -312,9 +333,9 @@ def put_cell(req: WriteCellRequest) -> dict:
 def put_field(req: WriteFieldRequest) -> dict:
     vault = _vault()
     _require_not_revision_locked(req.section, req.label)
-    old_value = _current_field_value(vault, req.path, req.section, req.label)
+    old_value = _current_field_value(vault, req.path, req.section, req.label, req.table_index)
     try:
-        found = write_field_value(req.path, req.section, req.label, req.value)
+        found = write_field_value(req.path, req.section, req.label, req.value, req.table_index)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     if not found:
@@ -339,7 +360,7 @@ def post_row(req: AppendRowRequest) -> dict:
     vault = _vault()
     _require_not_revision_locked(req.section)
     try:
-        append_row(req.path, req.section, req.values)
+        append_row(req.path, req.section, req.values, req.table_index)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     vault.refresh(req.path)
@@ -371,9 +392,13 @@ def put_cells_batch(req: WriteCellsBatchRequest) -> dict:
     old_values: dict[int, str | None] = {}
     for i, edit in enumerate(req.edits):
         if edit.kind == "record":
-            old_values[i] = _current_cell_value(vault, edit.path, edit.section, edit.row, edit.col)
+            old_values[i] = _current_cell_value(
+                vault, edit.path, edit.section, edit.row, edit.col, edit.table_index
+            )
         else:
-            old_values[i] = _current_field_value(vault, edit.path, edit.section, edit.label)
+            old_values[i] = _current_field_value(
+                vault, edit.path, edit.section, edit.label, edit.table_index
+            )
 
     try:
         write_edits_batch([e.model_dump() for e in req.edits])
@@ -477,6 +502,66 @@ def post_create_blank_spec(req: CreateBlankSpecRequest) -> dict:
 def get_audit_log(limit: int = 200) -> dict:
     vault = _vault()
     return {"entries": read_entries(vault.root, limit=limit)}
+
+
+@app.get("/exceptions")
+def get_exceptions() -> dict:
+    """Tables the parser could not confidently file under one of the 11
+    sections, grouped by heading, plus the decisions already made. This is
+    the queue a human works through — the app deliberately does not guess."""
+    vault = _vault()
+    mappings = load_mappings(vault.root)
+    return {
+        "pending": vault.unclassified(),
+        "resolved": [m.to_dict() for m in mappings.values()],
+        "sections": ALL_SECTIONS,
+        "ignore_value": IGNORE,
+    }
+
+
+class AssignExceptionRequest(BaseModel):
+    heading: str
+    section: str  # a canonical section name, or IGNORE
+    who: str = ""
+
+
+@app.post("/exceptions/assign")
+def post_assign_exception(req: AssignExceptionRequest) -> dict:
+    """Allocate every table under this heading to a section (or IGNORE it).
+    The decision is saved into the vault and applied immediately, so the
+    rows appear in that section's mass-edit view without a reopen."""
+    vault = _vault()
+    if req.section != IGNORE and req.section not in ALL_SECTIONS:
+        raise HTTPException(status_code=422, detail=f"Unknown section: {req.section}")
+    save_mapping(vault.root, req.heading, req.section, req.who)
+    vault.reload_mappings()
+    append_entry(
+        vault.root,
+        "assign_section",
+        req.who,
+        heading=req.heading,
+        section=req.section,
+    )
+    _broadcast(vault.root)
+    return {"ok": True, "heading": req.heading, "section": req.section}
+
+
+class UnassignExceptionRequest(BaseModel):
+    heading: str
+    who: str = ""
+
+
+@app.post("/exceptions/unassign")
+def post_unassign_exception(req: UnassignExceptionRequest) -> dict:
+    """Undo an allocation, returning the heading to the pending queue."""
+    vault = _vault()
+    removed = delete_mapping(vault.root, req.heading)
+    if not removed:
+        raise HTTPException(status_code=404, detail=f"No decision recorded for: {req.heading}")
+    vault.reload_mappings()
+    append_entry(vault.root, "unassign_section", req.who, heading=req.heading)
+    _broadcast(vault.root)
+    return {"ok": True, "heading": req.heading}
 
 
 @app.websocket("/ws")

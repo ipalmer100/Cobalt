@@ -98,6 +98,47 @@ This means a folder with, say, 150 `.doc` files and 150 `.docx` files
 usable, and the 150 `.doc` files quietly become `.docx` in the
 background over the next while with no action needed from anyone.
 
+### Table classification: confident matches only, everything else escalates
+
+The Mass Edit dropdown is always exactly the 11 canonical sections. What
+varies is which of a document's tables feed each one.
+
+- **A section can have several tables.** Franklin, OH writes specs
+  covering two process paths, so FR0282 carries `Process Routing -
+  Duplex` *and* `Process Routing - Triplex` (plus two `Physical
+  Attributes & Testing` tables, 33 rows each). Both land in that one
+  section's view, told apart by a read-only **Variant** column that
+  appears only when something in the view actually has one. Each row
+  carries the physical table it came from, so editing a Triplex row
+  writes to the Triplex table and leaves Duplex untouched — section name
+  alone is no longer a unique address.
+- **Confident matches are automatic**: the exact section name, a known
+  alias (a pouch spec's `Slitting Instructions` is a roll spec's
+  `Slitting Information`; `Packing Specifications` is `Packing
+  Information`), or a canonical name qualified by a separator
+  (`Process Routing - Duplex`, `Slitting Information - IMS Dairy
+  Product`).
+- **Everything else goes to the Exceptions queue rather than being
+  guessed at.** `Press Specification`, `Quality Issues`, `S3 Machine
+  Conditions` and the like are shown with a preview of their contents
+  and the specs they appear in, and a human allocates each to one of the
+  11 (or marks it "not a spec section"). Guessing here would be worse
+  than not reading the table at all — a Press Specification quietly
+  filed under Process Routing corrupts what everyone reads off the grid,
+  invisibly.
+- Decisions are keyed by heading text and saved in the vault
+  (`.specwrite/section_mappings.json`), so allocating `Quality Issues`
+  once covers every spec in the archive that uses that heading, for
+  everyone who opens the folder, and survives reopening. They're
+  reversible (Undo returns the heading to the queue) and logged to the
+  audit log.
+
+One related parsing detail: a table may open with a merged banner row
+above its real header (FR0282's duplex Process Routing starts with a
+`Comments:` band). Reading that as the header would leave every column
+unmapped and the rows blank in the grid, so a single-value first row
+followed by a plausible header row is skipped.
+
 ### Revision History is deliberately manual, and deliberately locked
 
 By design, editing data (Mass Edit grid, any field) never touches
@@ -299,19 +340,10 @@ on this at that scale day-to-day:**
 - One row in Slitting Information sometimes stacks two labels
   (`Core Tags:` / `Splice Code:`) inside a single physical cell; the
   parser currently reads that as one combined field instead of two.
-- **A spec containing two of the same section is only partly readable.**
-  FR0282 (Daisy Sour Cream) has both `Process Routing - Duplex` and
-  `Process Routing - Triplex`, and likewise two `Physical Attributes &
-  Testing` tables (33 rows each), because one document covers two
-  process paths. The data model holds one table per section name, so
-  neither variant is picked up and the section reports "not found"
-  rather than silently showing one and hiding the other. Supporting this
-  properly means letting a spec carry per-variant sections, which also
-  changes the Mass Edit view list from a fixed set of section names into
-  something per-spec — a product decision, not just a parser change.
-  Section *aliases* (a pouch spec's `Slitting Instructions` = a roll
-  spec's `Slitting Information`, `Packing Specifications` = `Packing
-  Information`) are handled and those tables read/write normally.
+- Some tables can't be allocated automatically and wait in the exception
+  queue until someone decides (see "Table classification" above). Until
+  then their rows aren't in any view — visible and pending, never
+  silently misfiled.
 - `.doc` conversion (automatic, see "Legacy `.doc` handling" above)
   requires LibreOffice installed and functional on the machine running
   the backend (`soffice` on PATH, or bundled into the packaged desktop

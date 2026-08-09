@@ -18,12 +18,12 @@ def test_duplicate_spec_resets_identity_and_carries_over_data(tmp_path):
     assert new_spec.revision_number == "01"
 
     # data tables carried over as a starting point
-    bom = new_spec.tables["Bill of Materials"].records()
+    bom = new_spec.primary("Bill of Materials").records()
     assert bom[0]["Raw Material"] == "48g PET"
     assert bom[0]["Supplier"] == "Flex Films"
 
     # revision history reset, not inherited from the source spec
-    rev = new_spec.tables["Revision History"].records()
+    rev = new_spec.primary("Revision History").records()
     assert len(rev) == 1
     assert rev[0]["Revision #"] == "01"
     assert rev[0]["Who"] == "Isaac"
@@ -54,12 +54,12 @@ def test_create_blank_spec_from_template(tmp_path):
     assert spec.revision_number == "01"
     assert spec.warnings == []
 
-    rev = spec.tables["Revision History"].records()
+    rev = spec.primary("Revision History").records()
     assert len(rev) == 1
     assert rev[0]["Revision"] == "Spec created from blank template."
 
     # blank template's data tables are genuinely empty (just headers)
-    assert spec.tables["Bill of Materials"].records() == []
+    assert spec.primary("Bill of Materials").records() == []
 
 
 def test_create_blank_spec_refuses_existing_destination(tmp_path):

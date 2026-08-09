@@ -46,42 +46,47 @@ export default function SpecDetail({ spec, onChanged, defaultWho }: Props) {
         </div>
       )}
 
-      {Object.entries(spec.sections).map(([name, section]) => (
-        <section key={name} className="spec-section">
-          <h3>{name}</h3>
-          {section.rows.length === 0 && <p className="empty">No data.</p>}
-          {section.shape === "records" && section.header_row && (
-            <table className="records-table">
-              <thead>
-                <tr>
-                  {section.header_row.map((h, i) => (
-                    <th key={i}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {section.rows.slice(1).map((row, r) => (
-                  <tr key={r}>
-                    {row.map((cell, c) => (
-                      <td key={c}>{cell}</td>
+      {Object.entries(spec.sections).map(([name, tables]) =>
+        tables.map((section, ti) => (
+          <section key={`${name}:${section.table_index}:${ti}`} className="spec-section">
+            <h3>
+              {name}
+              {section.variant && <span className="section-variant">{section.variant}</span>}
+            </h3>
+            {section.rows.length === 0 && <p className="empty">No data.</p>}
+            {section.shape === "records" && section.header_row && (
+              <table className="records-table">
+                <thead>
+                  <tr>
+                    {section.header_row.map((h, i) => (
+                      <th key={i}>{h}</th>
                     ))}
                   </tr>
+                </thead>
+                <tbody>
+                  {section.rows.slice(1).map((row, r) => (
+                    <tr key={r}>
+                      {row.map((cell, c) => (
+                        <td key={c}>{cell}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            {section.shape === "fields" && section.fields && (
+              <dl className="fields-grid">
+                {Object.entries(section.fields).map(([label, value]) => (
+                  <div className="field-pair" key={label}>
+                    <dt>{label}</dt>
+                    <dd>{value || "—"}</dd>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          )}
-          {section.shape === "fields" && section.fields && (
-            <dl className="fields-grid">
-              {Object.entries(section.fields).map(([label, value]) => (
-                <div className="field-pair" key={label}>
-                  <dt>{label}</dt>
-                  <dd>{value || "—"}</dd>
-                </div>
-              ))}
-            </dl>
-          )}
-        </section>
-      ))}
+              </dl>
+            )}
+          </section>
+        )),
+      )}
 
       <section className="spec-section revision-form">
         <h3>Add Revision</h3>

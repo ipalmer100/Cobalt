@@ -1,4 +1,12 @@
-import type { AuditLogResponse, BatchEditItem, SpecDetail, VaultResponse, ViewResponse, ViewsListResponse } from "./types";
+import type {
+  AuditLogResponse,
+  BatchEditItem,
+  ExceptionsResponse,
+  SpecDetail,
+  VaultResponse,
+  ViewResponse,
+  ViewsListResponse,
+} from "./types";
 
 // Empty string = same-origin relative requests, correct when the backend
 // serves this built frontend itself (the packaged desktop app). Local dev
@@ -40,17 +48,32 @@ export function getView(section: string) {
   return request<ViewResponse>(`/views/${encodeURIComponent(section)}`);
 }
 
-export function writeCell(path: string, section: string, row: number, col: number, value: string, who: string) {
+export function writeCell(
+  path: string,
+  section: string,
+  row: number,
+  col: number,
+  value: string,
+  who: string,
+  table_index?: number,
+) {
   return request<{ ok: boolean }>("/spec/cell", {
     method: "PUT",
-    body: JSON.stringify({ path, section, row, col, value, who }),
+    body: JSON.stringify({ path, section, row, col, value, who, table_index }),
   });
 }
 
-export function writeField(path: string, section: string, label: string, value: string, who: string) {
+export function writeField(
+  path: string,
+  section: string,
+  label: string,
+  value: string,
+  who: string,
+  table_index?: number,
+) {
   return request<{ ok: boolean }>("/spec/field", {
     method: "PUT",
-    body: JSON.stringify({ path, section, label, value, who }),
+    body: JSON.stringify({ path, section, label, value, who, table_index }),
   });
 }
 
@@ -98,4 +121,22 @@ export function connectLiveUpdates(onChanged: (path: string) => void): () => voi
     }
   };
   return () => ws.close();
+}
+
+export function getExceptions() {
+  return request<ExceptionsResponse>("/exceptions");
+}
+
+export function assignException(heading: string, section: string, who: string) {
+  return request<{ ok: boolean }>("/exceptions/assign", {
+    method: "POST",
+    body: JSON.stringify({ heading, section, who }),
+  });
+}
+
+export function unassignException(heading: string, who: string) {
+  return request<{ ok: boolean }>("/exceptions/unassign", {
+    method: "POST",
+    body: JSON.stringify({ heading, who }),
+  });
 }

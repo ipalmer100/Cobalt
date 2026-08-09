@@ -30,16 +30,23 @@ def validate(path: str) -> None:
         print(f"WARNINGS: {spec.warnings}")
 
     for name in ALL_SECTIONS:
-        table = spec.tables.get(name)
-        if table is None:
+        tables = spec.tables.get(name) or []
+        if not tables:
             print(f"  [MISSING] {name}")
             continue
-        if table.shape == TableShape.RECORDS:
-            n = len(table.records())
-            print(f"  [{table.location:6}] {name:32} records={n:3} cols={table.header_row}")
-        else:
-            fields = table.fields()
-            print(f"  [{table.location:6}] {name:32} fields={list(fields.keys())}")
+        for table in tables:
+            label = f"{name}{f' [{table.variant}]' if table.variant else ''}"
+            if table.shape == TableShape.RECORDS:
+                n = len(table.records())
+                print(f"  [{table.location:6}] {label:32} records={n:3} cols={table.header_row}")
+            else:
+                fields = table.fields()
+                print(f"  [{table.location:6}] {label:32} fields={list(fields.keys())}")
+
+    if spec.unclassified:
+        print(f"  EXCEPTION QUEUE ({len(spec.unclassified)} tables need allocating):")
+        for u in spec.unclassified:
+            print(f"    - {u.heading!r} ({u.shape.value}, {u.row_count} rows)")
 
     # Round-trip the writer against a scratch copy — never touch the original.
     with tempfile.TemporaryDirectory() as tmp:

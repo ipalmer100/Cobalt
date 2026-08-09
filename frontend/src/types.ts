@@ -19,6 +19,9 @@ export interface SpecSection {
   header_row: string[] | null;
   rows: string[][];
   fields: Record<string, string> | null;
+  variant: string;
+  heading: string;
+  table_index: number;
 }
 
 export interface SpecDetail {
@@ -26,8 +29,52 @@ export interface SpecDetail {
   spec_number: string;
   customer: string;
   revision_number: string;
-  sections: Record<string, SpecSection>;
+  // A section maps to every table found for it -- normally one, but a spec
+  // covering two process paths carries e.g. a Duplex and a Triplex
+  // Process Routing.
+  sections: Record<string, SpecSection[]>;
   warnings: string[];
+  unclassified: UnclassifiedTable[];
+}
+
+export interface UnclassifiedTable {
+  heading: string;
+  table_index: number;
+  shape: "records" | "fields";
+  header_row: string[] | null;
+  row_count: number;
+  preview: string[][];
+}
+
+export interface ExceptionSpecRef {
+  path: string;
+  spec_number: string;
+  table_index: number;
+  row_count: number;
+}
+
+export interface ExceptionGroup {
+  key: string;
+  heading: string;
+  shape: "records" | "fields";
+  header_row: string[] | null;
+  preview: string[][];
+  specs: ExceptionSpecRef[];
+  spec_count: number;
+}
+
+export interface ResolvedMapping {
+  heading: string;
+  section: string;
+  who: string;
+  at: string;
+}
+
+export interface ExceptionsResponse {
+  pending: ExceptionGroup[];
+  resolved: ResolvedMapping[];
+  sections: string[];
+  ignore_value: string;
 }
 
 export interface ViewRowSource {
@@ -35,6 +82,10 @@ export interface ViewRowSource {
   kind: "record" | "field";
   row: number;
   header_row: string[] | null;
+  // Which physical table in the document this row came from. Required to
+  // route a write when a spec holds several tables for one section.
+  table_index: number;
+  variant: string;
 }
 
 export interface ViewRow {
@@ -94,4 +145,5 @@ export interface BatchEditItem {
   col?: number | null;
   label?: string | null;
   value: string;
+  table_index?: number | null;
 }

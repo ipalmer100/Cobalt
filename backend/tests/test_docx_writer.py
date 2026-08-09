@@ -13,7 +13,7 @@ def test_write_record_cell_preserves_other_cells(tmp_path):
     build_sample_spec_docx(path)
 
     spec = parse_document(path)
-    bom = spec.tables["Bill of Materials"]
+    bom = spec.primary("Bill of Materials")
 
     doc = Document(path)
     table = doc.tables[bom.table_index]
@@ -21,7 +21,7 @@ def test_write_record_cell_preserves_other_cells(tmp_path):
     doc.save(path)
 
     spec2 = parse_document(path)
-    records = spec2.tables["Bill of Materials"].records()
+    records = spec2.primary("Bill of Materials").records()
     assert records[0]["Supplier"] == "New Supplier LLC"
     assert records[0]["Raw Material"] == "48g PET"  # untouched
 
@@ -36,7 +36,7 @@ def test_apply_revision_bumps_number_and_appends_row(tmp_path):
     spec = parse_document(path)
     assert spec.revision_number == "07"
 
-    rev_records = spec.tables["Revision History"].records()
+    rev_records = spec.primary("Revision History").records()
     assert len(rev_records) == 2
     assert rev_records[-1]["Revision #"] == "07"
     assert rev_records[-1]["Who"] == "Isaac Palmer"
@@ -63,8 +63,8 @@ def test_write_edits_batch_applies_multiple_record_edits_in_one_file(tmp_path):
     )
 
     spec = parse_document(path)
-    assert spec.tables["Bill of Materials"].records()[0]["Supplier"] == "Supplier A"
-    assert spec.tables["Secondary Approved Materials"].records()[0]["Supplier"] == "Supplier B"
+    assert spec.primary("Bill of Materials").records()[0]["Supplier"] == "Supplier A"
+    assert spec.primary("Secondary Approved Materials").records()[0]["Supplier"] == "Supplier B"
 
 
 def test_write_edits_batch_applies_field_edits(tmp_path):
@@ -76,7 +76,7 @@ def test_write_edits_batch_applies_field_edits(tmp_path):
     )
 
     spec = parse_document(path)
-    assert spec.tables["Locations"].fields()["Facility"] == "New Plant"
+    assert spec.primary("Locations").fields()["Facility"] == "New Plant"
 
 
 def test_write_edits_batch_spans_multiple_files(tmp_path):
@@ -92,8 +92,8 @@ def test_write_edits_batch_spans_multiple_files(tmp_path):
         ]
     )
 
-    assert parse_document(path_a).tables["Bill of Materials"].records()[0]["Supplier"] == "X"
-    assert parse_document(path_b).tables["Bill of Materials"].records()[0]["Supplier"] == "Y"
+    assert parse_document(path_a).primary("Bill of Materials").records()[0]["Supplier"] == "X"
+    assert parse_document(path_b).primary("Bill of Materials").records()[0]["Supplier"] == "Y"
 
 
 def test_write_edits_batch_is_faster_than_sequential_single_writes(tmp_path):
@@ -127,6 +127,6 @@ def test_write_cell_preserves_embedded_newlines(tmp_path):
     multiline = "50g PET-Non Coated Side\n50g PET-PVDC Coated Side"
     write_cell(path, "Bill of Materials", 1, 1, multiline)
 
-    value = parse_document(path).tables["Bill of Materials"].rows[1][1]
+    value = parse_document(path).primary("Bill of Materials").rows[1][1]
     assert value == multiline
     assert "\n" in value

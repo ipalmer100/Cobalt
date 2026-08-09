@@ -17,7 +17,7 @@ from docx import Document
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from .models import ParsedTable, Spec, TableShape
+from .models import ParsedTable, Spec, TableShape, UnclassifiedTable
 
 # Canonical section names, in the order they appear in a spec.
 PRODUCT_DESCRIPTION = "Product Description"
@@ -40,8 +40,12 @@ ALL_SECTIONS = [PRODUCT_DESCRIPTION, *BODY_SECTIONS]
 _FIELD_GRID_MIN_COLON_FRACTION = 0.25
 
 
+def _collapse(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _normalize(text: str) -> str:
-    return re.sub(r"\s+", " ", text).strip().lower()
+    return _collapse(text).lower()
 
 
 _NORMALIZED_BODY_SECTIONS = {_normalize(name): name for name in BODY_SECTIONS}
@@ -58,6 +62,70 @@ _SECTION_ALIASES = {
 
 for _alias, _canonical in _SECTION_ALIASES.items():
     _NORMALIZED_BODY_SECTIONS[_alias] = _canonical
+
+# A heading may qualify a canonical section rather than rename it --
+# "Process Routing - Duplex" is still Process Routing, just the duplex one.
+# Only these separators count, so "Process Routing Sheet Numbering" (a
+# different thing that merely starts with the same words) is not swallowed.
+_VARIANT_SEPARATORS = ("-", "–", "—", ":", "(", "‒")
+
+# Sentinel a human can assign in the exception queue to mean "this table
+# isn't one of the 11 -- stop asking about it".
+IGNORE = "__ignore__"
+
+
+def classify_heading(
+    text: str, overrides: dict[str, str] | None = None
+) -> tuple[str | None, str]:
+    """Map a heading onto one of the canonical sections.
+
+    Returns ``(section, variant)``; ``section`` is None when the heading
+    cannot be matched confidently, which routes the table to the exception
+    queue instead of being guessed at. ``overrides`` carries decisions a
+    human already made there (normalized heading -> section, or IGNORE).
+    """
+    collapsed = _collapse(text)
+    norm = collapsed.lower()
+    if not norm:
+        return None, ""
+
+    if overrides:
+        assigned = overrides.get(norm)
+        if assigned == IGNORE:
+            return IGNORE, ""
+        if assigned:
+            # Keep any qualifier so an assigned "Press Routing - Duplex"
+            # still shows up as the Duplex rows within its section.
+            _, variant = _match_known(collapsed) or (None, "")
+            return assigned, variant
+
+    match = _match_known(collapsed)
+    if match:
+        return match
+    return None, ""
+
+
+def _match_known(collapsed: str) -> tuple[str, str] | None:
+    norm = collapsed.lower()
+    if norm in _NORMALIZED_BODY_SECTIONS:
+        return _NORMALIZED_BODY_SECTIONS[norm], ""
+    if norm == _normalize(PRODUCT_DESCRIPTION):
+        return PRODUCT_DESCRIPTION, ""
+
+    # Longest key first so "Physical Attributes & Testing" wins over any
+    # shorter key that happens to prefix it.
+    for key in sorted(_NORMALIZED_BODY_SECTIONS, key=len, reverse=True):
+        if not norm.startswith(key) or len(norm) <= len(key):
+            continue
+        remainder = collapsed[len(key):]
+        if remainder[0] not in _VARIANT_SEPARATORS and not remainder[0].isspace():
+            continue
+        variant = remainder.strip().lstrip("".join(_VARIANT_SEPARATORS)).strip()
+        variant = variant.rstrip(")").strip()
+        if not variant:
+            continue
+        return _NORMALIZED_BODY_SECTIONS[key], variant
+    return None
 
 
 def _table_to_rows(table: Table) -> list[list[str]]:
@@ -76,10 +144,18 @@ def _classify_shape(rows: list[list[str]]) -> TableShape:
     return TableShape.FIELDS if fraction >= _FIELD_GRID_MIN_COLON_FRACTION else TableShape.RECORDS
 
 
-def _build_parsed_table(section: str, table: Table, table_index: int, location: str) -> ParsedTable:
+def _build_parsed_table(
+    section: str,
+    table: Table,
+    table_index: int,
+    location: str,
+    variant: str = "",
+    heading: str = "",
+) -> ParsedTable:
     rows = _table_to_rows(table)
     shape = _classify_shape(rows)
-    header_row = rows[0] if shape == TableShape.RECORDS and rows else None
+    header_index = _header_row_index(rows) if shape == TableShape.RECORDS else 0
+    header_row = rows[header_index] if shape == TableShape.RECORDS and rows else None
     return ParsedTable(
         section=section,
         table_index=table_index,
@@ -87,7 +163,29 @@ def _build_parsed_table(section: str, table: Table, table_index: int, location: 
         shape=shape,
         header_row=header_row,
         rows=rows,
+        variant=variant,
+        heading=heading,
+        header_index=header_index,
     )
+
+
+# A merged banner row spanning the full width ("Comments:" across FR0282's
+# duplex Process Routing) repeats one value into every cell. Taking it as
+# the header leaves the real column names unread and every row blank in the
+# grid, so look one row further down when the first row looks like that.
+_MIN_HEADER_DISTINCT_VALUES = 3
+
+
+def _header_row_index(rows: list[list[str]]) -> int:
+    if len(rows) < 2:
+        return 0
+    first_distinct = {c for c in rows[0] if c}
+    if len(first_distinct) > 1:
+        return 0
+    second_distinct = {c for c in rows[1] if c}
+    if len(second_distinct) >= _MIN_HEADER_DISTINCT_VALUES:
+        return 1
+    return 0
 
 
 def _iter_body_blocks(doc: Document):
@@ -107,24 +205,68 @@ def _iter_body_blocks(doc: Document):
             t_idx += 1
 
 
-def find_body_section_tables(doc: Document) -> dict[str, ParsedTable]:
-    """Pair each known section title paragraph with the table that follows it."""
-    found: dict[str, ParsedTable] = {}
-    pending_section: str | None = None
+# A paragraph is only treated as a candidate table heading if it looks like
+# one: short, and not a sentence. Body prose sitting above a table would
+# otherwise flood the exception queue with things nobody needs to triage.
+_MAX_HEADING_CHARS = 60
+
+
+def _is_heading_candidate(text: str) -> bool:
+    collapsed = _collapse(text)
+    if not collapsed or len(collapsed) > _MAX_HEADING_CHARS:
+        return False
+    return not collapsed.endswith(".")
+
+
+def find_body_section_tables(
+    doc: Document, overrides: dict[str, str] | None = None
+) -> tuple[dict[str, list[ParsedTable]], list[UnclassifiedTable]]:
+    """Pair each section title paragraph with the table that follows it.
+
+    A section maps to a *list* of tables: a spec written for two process
+    paths carries e.g. both "Process Routing - Duplex" and "Process Routing
+    - Triplex", and both belong under Process Routing. Headings that can't
+    be matched confidently are returned separately for the exception queue
+    rather than being guessed into a section.
+    """
+    found: dict[str, list[ParsedTable]] = {}
+    unclassified: list[UnclassifiedTable] = []
+    pending: tuple[str, str, str] | None = None  # (section|None-marker, variant, heading)
 
     for block in _iter_body_blocks(doc):
         if block[0] == "p":
             paragraph: Paragraph = block[1]
-            text = _normalize(paragraph.text)
-            if text in _NORMALIZED_BODY_SECTIONS:
-                pending_section = _NORMALIZED_BODY_SECTIONS[text]
+            raw = _collapse(paragraph.text)
+            if not _is_heading_candidate(raw):
+                continue
+            section, variant = classify_heading(raw, overrides)
+            pending = (section or "", variant, raw)
         else:
             _, table, table_index = block
-            if pending_section and pending_section not in found:
-                found[pending_section] = _build_parsed_table(pending_section, table, table_index, "body")
-            pending_section = None
+            if pending is not None:
+                section, variant, heading = pending
+                if section == IGNORE:
+                    pass
+                elif section:
+                    found.setdefault(section, []).append(
+                        _build_parsed_table(section, table, table_index, "body", variant, heading)
+                    )
+                else:
+                    rows = _table_to_rows(table)
+                    shape = _classify_shape(rows)
+                    unclassified.append(
+                        UnclassifiedTable(
+                            heading=heading,
+                            table_index=table_index,
+                            shape=shape,
+                            header_row=rows[0] if shape == TableShape.RECORDS and rows else None,
+                            row_count=len(rows),
+                            preview=[r[:8] for r in rows[:4]],
+                        )
+                    )
+            pending = None
 
-    return found
+    return found, unclassified
 
 
 def extract_product_description(doc: Document) -> ParsedTable:
@@ -165,20 +307,22 @@ def _spec_number_from_fields(pd_fields: dict[str, str]) -> str:
     return ""
 
 
-def parse_document(path: str) -> Spec:
+def parse_document(path: str, overrides: dict[str, str] | None = None) -> Spec:
     doc = Document(path)
 
-    tables: dict[str, ParsedTable] = {}
+    tables: dict[str, list[ParsedTable]] = {}
     warnings: list[str] = []
 
-    tables[PRODUCT_DESCRIPTION] = extract_product_description(doc)
-    tables.update(find_body_section_tables(doc))
+    tables[PRODUCT_DESCRIPTION] = [extract_product_description(doc)]
+    body_tables, unclassified = find_body_section_tables(doc, overrides)
+    for section, found in body_tables.items():
+        tables.setdefault(section, []).extend(found)
 
     for name in ALL_SECTIONS:
         if name not in tables:
             warnings.append(f"Section not found: {name}")
 
-    pd_fields = tables[PRODUCT_DESCRIPTION].fields()
+    pd_fields = tables[PRODUCT_DESCRIPTION][0].fields()
     spec_number = _spec_number_from_fields(pd_fields)
     customer = pd_fields.get("Customer", "")
     revision_number = pd_fields.get("Revision #", "")
@@ -190,4 +334,5 @@ def parse_document(path: str) -> Spec:
         revision_number=revision_number,
         tables=tables,
         warnings=warnings,
+        unclassified=unclassified,
     )
