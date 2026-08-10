@@ -8,6 +8,7 @@ interface Props {
   selectedPath: string | null;
   onSelect: (path: string) => void;
   onNewSpec: () => void;
+  onChangeFolder: () => void;
 }
 
 const ROW_HEIGHT_ESTIMATE = 52;
@@ -26,7 +27,18 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
-export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSpec }: Props) {
+// The folder a spec sits in, relative to the vault root. Shown because a
+// library organised by customer routinely holds same-named files in
+// different folders -- without this, two specs look identical in the list.
+function relativeFolder(root: string, path: string): string {
+  const normRoot = root.replace(/[\\/]+$/, "");
+  const rest = path.startsWith(normRoot) ? path.slice(normRoot.length) : path;
+  const parts = rest.split(/[\\/]/).filter(Boolean);
+  parts.pop(); // drop the filename
+  return parts.join(" / ");
+}
+
+export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSpec, onChangeFolder }: Props) {
   // A vault can have thousands of entries -- sorting with localeCompare on
   // every render (not just when entries actually change) was measurable at
   // that scale, on top of rendering every single one as a real DOM node
@@ -48,8 +60,13 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
 
   return (
     <div className="sidebar">
-      <div className="sidebar-root" title={root}>
-        {root}
+      <div className="sidebar-root">
+        <span className="sidebar-root-path" title={root}>
+          {root}
+        </span>
+        <button className="change-folder-button" onClick={onChangeFolder} title="Open a different folder">
+          Change
+        </button>
       </div>
       <button className="new-spec-button" onClick={onNewSpec}>
         + New Spec
@@ -59,6 +76,7 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
           {virtualizer.getVirtualItems().map((vi) => {
             const entry = sorted[vi.index];
             const isPending = entry.error === CONVERTING_MESSAGE;
+            const folder = relativeFolder(root, entry.path);
             return (
               <button
                 key={entry.path}
@@ -72,6 +90,11 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
                 title={entry.error ?? entry.path}
               >
                 <span className="sidebar-item-name">{fileName(entry.path)}</span>
+                {folder && (
+                  <span className="sidebar-item-folder" title={entry.path}>
+                    {folder}
+                  </span>
+                )}
                 {entry.supported ? (
                   <span className="sidebar-item-meta">
                     {entry.spec_number} · Rev {entry.revision_number}

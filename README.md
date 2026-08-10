@@ -98,6 +98,47 @@ This means a folder with, say, 150 `.doc` files and 150 `.docx` files
 usable, and the 150 `.doc` files quietly become `.docx` in the
 background over the next while with no action needed from anyone.
 
+### Choosing the folder, and folders-within-folders
+
+On launch the app asks which folder to open, and remembers the answer:
+
+- The last-opened folder is prefilled and the previous five are listed as
+  one-click buttons, so a daily user never retypes a long SharePoint path.
+  It is deliberately *not* auto-opened — indexing a large library takes
+  real time, so starting that stays an explicit click.
+- **Browse…** opens an in-app folder browser rather than the OS dialog.
+  This is not laziness: the app runs in the user's default browser, and
+  browsers deliberately withhold real filesystem paths
+  (`webkitdirectory` and `showDirectoryPicker` hand back file handles,
+  never a path), while opening a vault needs a real path. So the
+  directory listing is served by the backend — `GET /browse` — which is
+  running on the machine that actually holds the files. It shows how many
+  specs sit directly in the folder you're looking at, as a "you're in the
+  right place" hint. **Change** in the sidebar returns to this screen.
+- The typed path still works, and is the escape hatch for a UNC path you
+  want to paste (`\\server\share\Specs`).
+
+**Subfolders are always included** — one pick covers a whole library,
+however deeply nested. That matters for a SharePoint library synced into
+File Explorer and organised by customer, so a spec's folder is shown
+wherever it would otherwise be ambiguous: under its name in the sidebar,
+and as a vault-relative path in the mass-edit **File Path** column (the
+stored value stays absolute — it's the write key). Two specs both called
+`HK0071.docx` in different customer folders are therefore
+distinguishable, which they weren't when only the filename was shown.
+
+Two things worth knowing before rolling this out on synced storage:
+
+- With OneDrive **Files On-Demand**, cloud-only files are downloaded when
+  first read, so the first index of a large library will hydrate it.
+  Marking the library "Always keep on this device" avoids a surprise.
+- `.specwrite/` (the audit log and the exception queue's decisions) lives
+  in the vault, which is the point — it's shared with everyone who opens
+  the folder. On synced storage that also means two people deciding at
+  the same moment can produce sync conflict copies of those files. There
+  is no file locking: two people editing the same spec is last-write-wins
+  plus whatever conflict copy the sync client makes.
+
 ### Table classification: confident matches only, everything else escalates
 
 The Mass Edit dropdown is always exactly the 11 canonical sections. What

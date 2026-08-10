@@ -847,3 +847,145 @@ button.secondary {
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* --- Folder picking: remembered roots + an in-app browser --- */
+
+.open-vault-sub {
+  margin-top: -6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.recent-roots {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  max-width: 560px;
+}
+
+.recent-roots-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.recent-root {
+  max-width: 540px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-root:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent);
+}
+
+.folder-picker {
+  width: 560px;
+  max-width: 90vw;
+}
+
+.folder-picker-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.folder-picker-path {
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-sidebar);
+  word-break: break-all;
+}
+
+.folder-picker-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 0 8px;
+}
+
+.folder-picker-list {
+  height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.folder-row {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.folder-row:hover {
+  background: var(--bg-hover);
+}
+
+.folder-row.up {
+  color: var(--text-muted);
+}
+
+/* --- Folder context in the sidebar --- */
+
+.sidebar-root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-root-path {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.change-folder-button {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.change-folder-button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.sidebar-item-folder {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.sidebar-item.selected .sidebar-item-folder {
+  color: rgba(255, 255, 255, 0.75);
+}

@@ -5,6 +5,7 @@ import SpecDetail from "./components/SpecDetail";
 import MassEditGrid from "./components/MassEditGrid";
 import NewSpecModal from "./components/NewSpecModal";
 import AuditLogView from "./components/AuditLogView";
+import FolderPicker from "./components/FolderPicker";
 import ExceptionsView from "./components/ExceptionsView";
 import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
 import "./App.css";
@@ -12,10 +13,29 @@ import "./App.css";
 type Mode = "detail" | "mass-edit" | "audit-log" | "exceptions";
 
 const WHO_STORAGE_KEY = "specwrite.who";
+// The vault folder is remembered so a daily user doesn't retype a long
+// SharePoint path on every launch. Deliberately prefilled rather than
+// auto-opened: indexing a large library takes real time, so opening it
+// stays an explicit click.
+const ROOT_STORAGE_KEY = "specwrite.lastRoot";
+const RECENT_ROOTS_KEY = "specwrite.recentRoots";
+const MAX_RECENT_ROOTS = 5;
+
+function loadRecentRoots(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_ROOTS_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((r) => typeof r === "string") : [];
+  } catch {
+    return [];
+  }
+}
 
 export default function App() {
   const [root, setRoot] = useState("");
-  const [rootInput, setRootInput] = useState("");
+  const [rootInput, setRootInput] = useState(() => localStorage.getItem(ROOT_STORAGE_KEY) ?? "");
+  const [recentRoots, setRecentRoots] = useState<string[]>(loadRecentRoots);
+  const [showPicker, setShowPicker] = useState(false);
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [spec, setSpec] = useState<SpecDetailType | null>(null);
@@ -55,13 +75,27 @@ export default function App() {
     }
   }
 
-  async function handleOpen() {
-    if (!rootInput.trim()) return;
+  function rememberRoot(resolved: string) {
+    localStorage.setItem(ROOT_STORAGE_KEY, resolved);
+    setRecentRoots((prev) => {
+      const next = [resolved, ...prev.filter((r) => r !== resolved)].slice(0, MAX_RECENT_ROOTS);
+      localStorage.setItem(RECENT_ROOTS_KEY, JSON.stringify(next));
+      return next;
+    });
+  }
+
+  async function handleOpen(pathOverride?: string) {
+    const target = (pathOverride ?? rootInput).trim();
+    if (!target) return;
     setOpening(true);
     setError(null);
     try {
-      const res = await openVault(rootInput.trim());
+      const res = await openVault(target);
       setRoot(res.root);
+      // Store the path the backend resolved, not what was typed, so the
+      // remembered entry is canonical.
+      rememberRoot(res.root);
+      setRootInput(res.root);
       const viewsRes = await listViews();
       await refreshVaultList();
       setViews(viewsRes.views);
@@ -110,7 +144,10 @@ export default function App() {
     return (
       <div className="open-vault-screen">
         <h1>SpecWrite</h1>
-        <p>Point this at the folder containing your customer spec .docx files.</p>
+        <p>Point this at the folder containing your customer specs.</p>
+        <p className="open-vault-sub">
+          Subfolders are included, so one pick covers a whole library.
+        </p>
         <div className="open-vault-form">
           <input
             placeholder="/path/to/specs"
@@ -118,11 +155,38 @@ export default function App() {
             onChange={(e) => setRootInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleOpen()}
           />
-          <button disabled={opening} onClick={handleOpen}>
+          <button className="secondary" disabled={opening} onClick={() => setShowPicker(true)}>
+            Browse…
+          </button>
+          <button disabled={opening} onClick={() => handleOpen()}>
             {opening ? "Opening…" : "Open Vault"}
           </button>
         </div>
+
+        {recentRoots.length > 0 && (
+          <div className="recent-roots">
+            <span className="recent-roots-label">Recent</span>
+            {recentRoots.map((r) => (
+              <button key={r} className="recent-root" title={r} disabled={opening} onClick={() => handleOpen(r)}>
+                {r}
+              </button>
+            ))}
+          </div>
+        )}
+
         {error && <div className="error">{error}</div>}
+
+        {showPicker && (
+          <FolderPicker
+            initialPath={rootInput || recentRoots[0]}
+            onClose={() => setShowPicker(false)}
+            onPick={(picked) => {
+              setShowPicker(false);
+              setRootInput(picked);
+              handleOpen(picked);
+            }}
+          />
+        )}
       </div>
     );
   }
@@ -135,6 +199,11 @@ export default function App() {
         selectedPath={selectedPath}
         onSelect={setSelectedPath}
         onNewSpec={() => setShowNewSpec(true)}
+        onChangeFolder={() => {
+          setRoot("");
+          setSelectedPath(null);
+          setSpec(null);
+        }}
       />
       {showNewSpec && (
         <NewSpecModal

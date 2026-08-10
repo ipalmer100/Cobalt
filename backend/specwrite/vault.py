@@ -60,9 +60,13 @@ def _is_hidden_or_lock_file(name: str) -> bool:
     return name.startswith("~$") or name.startswith(".")
 
 
-def _is_spec_file(name: str) -> bool:
+def is_spec_file(name: str) -> bool:
     lower = name.lower()
     return lower.endswith(".docx") or lower.endswith(".doc")
+
+
+# Kept as a private alias so existing call sites read unchanged.
+_is_spec_file = is_spec_file
 
 
 def _docx_sibling(doc_path: str) -> str:

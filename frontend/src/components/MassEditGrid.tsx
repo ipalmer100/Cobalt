@@ -16,6 +16,16 @@ type DisplayItem = { type: "row"; row: ViewRow } | { type: "group-header"; key: 
 const META_PREFIX = ["Spec Number", "Customer"];
 const ROW_HEIGHT_ESTIMATE = 30;
 
+// Path relative to the vault root, so two same-named specs in different
+// customer folders read differently in the File Path column. The stored
+// value stays absolute -- it's the write key.
+function relativeToRoot(root: string, path: string): string {
+  if (!root) return fileName(path);
+  const normRoot = root.replace(/[\\/]+$/, "");
+  if (!path.startsWith(normRoot)) return fileName(path);
+  return path.slice(normRoot.length).replace(/^[\\/]+/, "") || fileName(path);
+}
+
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
@@ -84,6 +94,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
   const [rows, setRows] = useState<ViewRow[]>([]);
   const [editable, setEditable] = useState(true);
   const [readonlyColumns, setReadonlyColumns] = useState<string[]>([]);
+  const [root, setRoot] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
@@ -107,6 +118,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
       setRows(res.rows);
       setEditable(res.editable);
       setReadonlyColumns(res.readonly_columns);
+      setRoot(res.root ?? "");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -469,6 +481,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
                   measureRef={virtualizer.measureElement}
                   row={item.row}
                   columns={columns}
+                  root={root}
                   editable={editable}
                   readonlyColumns={readonlyColumns}
                   activeCell={activeCell}
@@ -500,6 +513,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
 }
 
 interface GridRowProps {
+  root: string;
   row: ViewRow;
   columns: string[];
   editable: boolean;
@@ -519,6 +533,7 @@ interface GridRowProps {
 const GridRow = memo(function GridRow({
   row,
   columns,
+  root,
   editable,
   readonlyColumns,
   activeCell,
@@ -545,7 +560,7 @@ const GridRow = memo(function GridRow({
         if (col === "File Path") {
           return (
             <td key={col} title={value}>
-              {fileName(value)}
+              {relativeToRoot(root, value)}
             </td>
           );
         }

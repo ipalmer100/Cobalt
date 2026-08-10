@@ -98,6 +98,19 @@ export interface ViewResponse {
   rows: ViewRow[];
   editable: boolean;
   readonly_columns: string[];
+  root: string;
+}
+
+export interface BrowseEntry {
+  name: string;
+  path: string;
+}
+
+export interface BrowseResponse {
+  path: string | null;
+  parent: string | null;
+  entries: BrowseEntry[];
+  spec_count: number;
 }
 
 export interface ViewMeta {

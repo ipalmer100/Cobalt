@@ -409,3 +409,57 @@ def test_batch_cell_write_logs_one_audit_entry_per_file_not_per_cell(client, tmp
     assert len(entry_a["edits"]) == 2
     assert entry_a["edits"][0]["old_value"] == "Flex Films"
     assert entry_a["edits"][0]["new_value"] == "V1"
+
+
+def test_browse_lists_roots_when_no_path_given(client):
+    """The picker needs a starting point before any path is chosen."""
+    r = client.get("/browse")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["path"] is None
+    assert len(body["entries"]) > 0
+
+
+def test_browse_lists_subfolders_and_counts_specs(client, tmp_path):
+    (tmp_path / "Atkinson Candy").mkdir()
+    (tmp_path / "T Marzetti").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    build_sample_spec_docx(str(tmp_path / "spec1.docx"))
+
+    r = client.get("/browse", params={"path": str(tmp_path)})
+    assert r.status_code == 200
+    body = r.json()
+
+    assert [e["name"] for e in body["entries"]] == ["Atkinson Candy", "T Marzetti"]
+    assert body["spec_count"] == 1
+    assert body["parent"] is not None
+
+
+def test_browse_rejects_a_non_folder(client, tmp_path):
+    path = tmp_path / "spec1.docx"
+    build_sample_spec_docx(str(path))
+    assert client.get("/browse", params={"path": str(path)}).status_code == 404
+
+
+def test_view_response_carries_the_vault_root(client, tmp_path):
+    """The grid shows File Path relative to the vault, which needs the root."""
+    build_sample_spec_docx(str(tmp_path / "spec1.docx"))
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    body = client.get("/views/Bill of Materials").json()
+    assert body["root"] == str(tmp_path.resolve())
+
+
+def test_specs_in_subfolders_are_indexed(client, tmp_path):
+    """A SharePoint library is foldered by customer; one pick must cover the
+    whole tree, and same-named specs in different folders must both land."""
+    nested = tmp_path / "Daisy" / "Pouches"
+    nested.mkdir(parents=True)
+    build_sample_spec_docx(str(tmp_path / "Daisy" / "HK0071.docx"), spec_number="HK0071")
+    build_sample_spec_docx(str(nested / "HK0071.docx"), spec_number="HK0600")
+
+    client.post("/vault/open", json={"root": str(tmp_path)})
+    entries = client.get("/vault").json()["entries"]
+
+    assert len(entries) == 2
+    assert {e["spec_number"] for e in entries} == {"HK0071", "HK0600"}

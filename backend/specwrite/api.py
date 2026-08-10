@@ -10,6 +10,7 @@ the same "instant" feel as Obsidian's live reload.
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,7 +28,7 @@ from .creation import CreationError, create_blank_spec, duplicate_spec
 from .docx_sections import ALL_SECTIONS, IGNORE, PRODUCT_DESCRIPTION
 from .section_mappings import delete_mapping, load_mappings, save_mapping
 from .docx_writer import append_row, apply_revision, write_cell, write_edits_batch, write_field_value
-from .vault import Vault
+from .vault import Vault, is_spec_file
 from .views import (
     REVISION_HISTORY,
     REVISION_NUMBER_FIELD,
@@ -223,6 +224,79 @@ class CreateBlankSpecRequest(BaseModel):
     who: str
 
 
+def _drive_roots() -> list[dict]:
+    """Windows drive letters, so the picker has somewhere to start. A
+    SharePoint library synced into File Explorer shows up either as a mapped
+    drive or under the user's profile, so both are offered."""
+    roots: list[dict] = []
+    if sys.platform == "win32":
+        import string
+
+        for letter in string.ascii_uppercase:
+            drive = f"{letter}:\\"
+            if Path(drive).exists():
+                roots.append({"name": drive, "path": drive})
+    else:
+        roots.append({"name": "/", "path": "/"})
+    home = Path.home()
+    if home.exists():
+        roots.append({"name": f"Home ({home.name or home})", "path": str(home)})
+    return roots
+
+
+def _count_specs_directly_in(directory: Path) -> int:
+    """Spec files sitting in this folder itself (not its subfolders) — enough
+    of a hint that you're in the right place, without walking the tree."""
+    count = 0
+    try:
+        with os.scandir(directory) as it:
+            for item in it:
+                if item.is_file() and is_spec_file(item.name):
+                    count += 1
+    except OSError:
+        return 0
+    return count
+
+
+@app.get("/browse")
+def browse_folders(path: str | None = None) -> dict:
+    """List subfolders so the UI can offer a folder picker.
+
+    The app opens in the user's default browser, which by design cannot see
+    real filesystem paths (`webkitdirectory` and `showDirectoryPicker` both
+    withhold them) — and the backend needs a real path to open a vault. So
+    the browsing happens here, on the machine that actually has the files.
+    """
+    if not path:
+        return {"path": None, "parent": None, "entries": _drive_roots(), "spec_count": 0}
+
+    try:
+        target = Path(path).expanduser().resolve()
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"Bad path: {exc}") from exc
+    if not target.is_dir():
+        raise HTTPException(status_code=404, detail=f"Not a folder: {target}")
+
+    entries: list[dict] = []
+    try:
+        with os.scandir(target) as it:
+            for item in it:
+                if not item.is_dir(follow_symlinks=False) or item.name.startswith("."):
+                    continue
+                entries.append({"name": item.name, "path": item.path})
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=f"Can't read that folder: {exc}") from exc
+    entries.sort(key=lambda e: e["name"].lower())
+
+    parent = str(target.parent) if target.parent != target else None
+    return {
+        "path": str(target),
+        "parent": parent,
+        "entries": entries,
+        "spec_count": _count_specs_directly_in(target),
+    }
+
+
 @app.post("/vault/open")
 def open_vault(req: OpenVaultRequest) -> dict:
     old = _state["vault"]
@@ -300,6 +374,10 @@ def get_view(section: str) -> JSONResponse:
             "rows": rows,
             "editable": is_view_editable(section),
             "readonly_columns": readonly_columns_for(section),
+            # So the grid can show File Path relative to the vault, which is
+            # what tells two same-named specs in different customer folders
+            # apart. The stored value stays absolute -- it's the write key.
+            "root": _vault().root,
         }
     )
 

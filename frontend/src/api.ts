@@ -1,6 +1,7 @@
 import type {
   AuditLogResponse,
   BatchEditItem,
+  BrowseResponse,
   ExceptionsResponse,
   SpecDetail,
   VaultResponse,
@@ -139,4 +140,9 @@ export function unassignException(heading: string, who: string) {
     method: "POST",
     body: JSON.stringify({ heading, who }),
   });
+}
+
+export function browseFolders(path?: string) {
+  const q = path ? `?path=${encodeURIComponent(path)}` : "";
+  return request<BrowseResponse>(`/browse${q}`);
 }
