@@ -209,7 +209,37 @@ changes them together, atomically — see `specwrite/views.py`
 
 ## Running it
 
-Backend:
+### Quickest way to try it on your own folder
+
+One command, one port, one browser tab — the backend serves the built
+frontend itself, so there's no second terminal and no dev server:
+
+```
+cd frontend && npm install && npm run build && cd ..
+cd backend && pip install -e . && python -m specwrite.desktop
+```
+
+It prints the port, opens your browser, and tells you whether `.doc`
+conversion is available:
+
+```
+Starting SpecWrite...
+Opening http://127.0.0.1:8765/ in your browser.
+.doc conversion: available (/usr/bin/soffice)
+```
+
+Click **Browse…** and pick your folder. Needs Python ≥3.11 and Node once,
+on the machine you run it from. LibreOffice is optional — without it
+`.docx` specs work normally and each `.doc` shows a clear per-file error
+instead of converting.
+
+Leave that window open while you use the app; closing it stops the
+server.
+
+### Two-terminal dev setup
+
+For working *on* SpecWrite, run the API and Vite separately so both
+hot-reload:
 
 ```
 cd backend
@@ -217,16 +247,14 @@ pip install -e .
 python -m uvicorn specwrite.api:app --reload
 ```
 
-Frontend (separate terminal):
-
 ```
 cd frontend
 npm install
 npm run dev
 ```
 
-Open the printed Vite URL, enter the absolute path to a folder of spec
-`.docx` files, and click "Open Vault".
+Open the printed Vite URL (`:5173`), which talks to the backend on
+`:8000` via `frontend/.env.development`.
 
 ### Packaged desktop app (Windows)
 
