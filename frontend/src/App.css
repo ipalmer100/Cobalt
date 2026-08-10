@@ -351,9 +351,16 @@ table.records-table.editable textarea.cell-editor:focus {
 table.records-table.editable textarea.cell-editor {
   font-family: inherit;
   line-height: 1.35;
-  resize: vertical;
   display: block;
   overflow-wrap: anywhere;
+  /* No resize grip at rest -- a grid full of them reads as clutter, and
+     rows already auto-size to their content. The cell being edited gets
+     one, for the occasional very long value. */
+  resize: none;
+}
+
+table.records-table.editable textarea.cell-editor:focus {
+  resize: vertical;
 }
 
 .th-inner {
