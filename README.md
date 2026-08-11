@@ -404,6 +404,73 @@ on this at that scale day-to-day:**
   of looking hung at the old ~17-minute figure. Worth adding if vaults
   routinely open in the multi-minute range in practice.
 
+## Storage: a local folder, or a SharePoint library
+
+The spec intelligence never touches a filesystem. `docx_sections.py`,
+`docx_writer.py`, `models.py` and `views.py` — section detection, the
+Duplex/Triplex variant handling, the exception classifier, newline-safe
+writes, the revision lock — work on **bytes**, via `parse_bytes()` and
+`apply_to_bytes()`. That is what lets the same logic run against a folder
+on disk or a document library reached over HTTPS.
+
+Underneath sits `storage.py`, whose `SpecStore` interface is deliberately
+small: enumerate the specs, hand over one's bytes, take modified bytes
+back, say when something changed. Two implementations:
+
+- **`LocalStore`** — a folder and everything beneath it, watched with the
+  OS's own file notifications. This is the desktop app.
+- **`GraphStore`** (`graph_store.py`) — a SharePoint document library over
+  Microsoft Graph.
+
+The interface acknowledges three places where those genuinely differ,
+rather than pretending they're the same:
+
+- **Identity.** A local spec is its absolute path. A SharePoint spec is an
+  opaque drive-item id that survives renames and moves, with the path
+  being only its current location. Callers treat `StoredItem.key` as
+  opaque.
+- **Concurrency.** A filesystem write is last-one-wins and silent.
+  SharePoint gives every item an eTag and rejects an upload whose
+  `If-Match` is stale — the only reliable way to notice that someone
+  edited the same spec in Word while it sat open in the grid. `write()`
+  takes the eTag the bytes were read at and raises `ConflictError`
+  instead of overwriting. This is the answer to the concurrent-edit
+  question the local version couldn't solve; `LocalStore` approximates it
+  with a size+mtime marker, which catches the realistic case.
+- **Change detection.** There is no inotify for SharePoint, so
+  `GraphStore` uses `/delta`: the first call enumerates the library and
+  leaves a token, and later polls return only what moved. (Graph webhooks
+  would push instead of poll, but they need an endpoint SharePoint can
+  reach from the internet, which an internal deployment usually can't
+  offer.) Throttling is treated as routine, not exceptional — indexing
+  thousands of specs earns 429s, so every request honours `Retry-After`.
+
+Auth sits behind a one-method `TokenProvider`. `ClientCredentialsToken`
+is app-only: the app authenticates as itself, which is the simplest thing
+that works against a test library. The consequence is worth stating
+plainly — Graph then sees one identity for everyone, so "who changed
+this" is only as trustworthy as whatever login the app puts in front of
+itself. Swapping in a delegated (per-user) token provider is what fixes
+that, and is the only change needed here.
+
+Graph is unreachable from this repo's build environment, so `GraphStore`
+is tested against `tests/fakes/fake_graph.py` — not a stub that agrees
+with everything, but a fake reproducing the behaviours that actually
+shape the client: eTags with `If-Match` → 412, `@odata.nextLink` paging,
+delta tokens, 429 with `Retry-After`, and `conflictBehavior=fail` → 409.
+
+**Not yet wired up:** `Vault` (indexing, the file watcher, the conversion
+queue) still talks to the filesystem directly, so the running app is
+local-only today. Pointing it at a `SpecStore` is the next step, and is
+mechanical by comparison now that the layer beneath it exists. Two other
+things that need decisions before a hosted deployment: `.doc` conversion
+shells out to LibreOffice on a real path, so under Graph it becomes
+download → convert on the server → upload; and the audit log and
+exception-queue decisions currently live in `.specwrite/` inside the
+folder, which for a multi-user server should become a database (SQLite
+behind an interface is enough to start, and upgrades to Postgres or Azure
+SQL by connection string).
+
 ## Known limitations (v1 scaffold)
 
 - One row in Slitting Information sometimes stacks two labels

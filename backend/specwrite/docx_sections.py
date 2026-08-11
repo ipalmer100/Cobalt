@@ -11,6 +11,7 @@ fallback to the first body table for older specs that never got a header
 
 from __future__ import annotations
 
+import io
 import re
 
 from docx import Document
@@ -307,8 +308,24 @@ def _spec_number_from_fields(pd_fields: dict[str, str]) -> str:
     return ""
 
 
+def parse_bytes(key: str, data: bytes, overrides: dict[str, str] | None = None) -> Spec:
+    """Parse a spec held in memory, labelled with the store key it came from.
+
+    The storage-neutral entry point: a SharePoint document arrives as bytes
+    over HTTPS and never exists as a file, and this is also what gets handed
+    to worker processes during a parallel index (bytes and a string pickle
+    cheaply; an open store connection does not).
+    """
+    return _parse(io.BytesIO(data), key, overrides)
+
+
 def parse_document(path: str, overrides: dict[str, str] | None = None) -> Spec:
-    doc = Document(path)
+    """Parse a spec from a filesystem path."""
+    return _parse(path, str(path), overrides)
+
+
+def _parse(source, key: str, overrides: dict[str, str] | None = None) -> Spec:  # noqa: ANN001
+    doc = Document(source)
 
     tables: dict[str, list[ParsedTable]] = {}
     warnings: list[str] = []
@@ -328,7 +345,7 @@ def parse_document(path: str, overrides: dict[str, str] | None = None) -> Spec:
     revision_number = pd_fields.get("Revision #", "")
 
     return Spec(
-        file_path=path,
+        file_path=key,
         spec_number=spec_number,
         customer=customer,
         revision_number=revision_number,

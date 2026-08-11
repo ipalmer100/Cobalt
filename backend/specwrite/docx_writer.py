@@ -13,6 +13,7 @@ block without touching the rest of the file.
 
 from __future__ import annotations
 
+import io
 import re
 from datetime import date as date_cls
 
@@ -138,6 +139,21 @@ def _resolve_table(doc: Document, section: str, table_index: int | None = None) 
     if not parsed:
         raise ValueError(f"Section not found: {section}")
     return doc.tables[parsed[0].table_index]
+
+
+def apply_to_bytes(data: bytes, mutate) -> bytes:  # noqa: ANN001
+    """Open a spec held in memory, let `mutate(doc)` change it, hand back the
+    new bytes.
+
+    The storage-neutral write primitive: a SharePoint document is downloaded,
+    edited and uploaded, never touching a filesystem. Every path-based
+    function below is this plus a read and a write.
+    """
+    doc = Document(io.BytesIO(data))
+    mutate(doc)
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue()
 
 
 def write_cell(path: str, section: str, row: int, col: int, value: str, table_index: int | None = None) -> None:
