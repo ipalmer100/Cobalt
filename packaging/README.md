@@ -87,6 +87,41 @@ whole app. Copy or zip that folder anywhere — a USB drive, another
 machine, the desktop — and `SpecWrite.exe` inside it is the entire
 "install."
 
+## Updating an app you already built
+
+Once the one-time setup above is done, picking up newer code is two
+commands from the repo folder:
+
+```
+git pull
+packaging\build_windows_exe.bat
+```
+
+`git pull` brings down the new code; the build script rebuilds the
+frontend and re-runs PyInstaller. It overwrites `packaging\dist\SpecWrite\`
+in place, so the app folder you already have is replaced by the new one —
+there's nothing to uninstall.
+
+Three things worth knowing:
+
+- **Close the running app first.** Windows won't let PyInstaller overwrite
+  `SpecWrite.exe` while it's running, and the failure looks like a
+  permissions error rather than "the app is open". Close the console
+  window the app opened, then build.
+- **Your specs are untouched.** The app folder holds no spec data — your
+  documents stay wherever they live, and the app remembers your last
+  folder in the browser, not in the build. A rebuild doesn't ask you to
+  re-pick it.
+- **Hard-refresh once after launching** (Ctrl+F5) if the UI looks
+  unchanged. The browser can serve the previous version's cached page.
+
+If `git pull` reports a conflict because the app was run from a folder
+where files got edited, `git status` will name them; `git checkout -- <file>`
+discards local changes to a file you didn't mean to change.
+
+To confirm you actually got the newer build, `git log --oneline -1` before
+building tells you which commit you're on.
+
 ### If the script misbehaves
 
 The `.bat` cannot be executed in the Linux environment this repo is
