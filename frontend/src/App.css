@@ -996,3 +996,154 @@ button.secondary {
 .sidebar-item.selected .sidebar-item-folder {
   color: rgba(255, 255, 255, 0.75);
 }
+
+/* --- Sidebar search --- */
+
+.sidebar-search {
+  margin: 8px 10px 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.sidebar-search:focus {
+  outline: 1px solid var(--accent);
+}
+
+.sidebar-search-count {
+  padding: 0 12px 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* --- Editable Spec Detail --- */
+
+.spec-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.section-locked {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+textarea.detail-editor {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 3px 5px;
+  resize: none;
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+/* Editable cells read as flat text until hovered, so a spec still reads as
+   a document rather than a wall of form fields. */
+textarea.detail-editor:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+
+textarea.detail-editor:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg);
+  resize: vertical;
+}
+
+textarea.detail-editor.saving {
+  border-color: var(--accent);
+  opacity: 0.65;
+}
+
+textarea.detail-editor.saved {
+  border-color: #2e9e5b;
+  background: rgba(46, 158, 91, 0.1);
+}
+
+textarea.detail-editor.error {
+  border-color: var(--error);
+  background: rgba(192, 57, 43, 0.1);
+}
+
+.detail-locked {
+  display: block;
+  padding: 3px 5px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.fields-grid dd textarea.detail-editor {
+  text-align: right;
+}
+
+table.records-table.detail-table td {
+  padding: 2px 3px;
+}
+
+/* --- Filter menu: select-all row and live count --- */
+
+.filter-menu-all {
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.filter-menu-count {
+  padding: 5px 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+.filter-menu-footer button.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* A column another spec has but this one's table doesn't. Rendered as an
+   inert gap so it reads as "not applicable here" rather than as an empty
+   cell waiting to be filled in -- typing into one could never be saved. */
+td.cell-absent {
+  background: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 5px,
+    var(--absent-hatch, rgba(127, 127, 127, 0.14)) 5px,
+    var(--absent-hatch, rgba(127, 127, 127, 0.14)) 6px
+  );
+  cursor: not-allowed;
+}
+
+/* A save that failed, marked where it happened. The banner at the top of
+   the grid is invisible when you're hundreds of rows down, which made a
+   failed write look identical to an edit that just didn't stick. */
+td.save-failed textarea.cell-editor {
+  border-color: #c0392b;
+  background: rgba(192, 57, 43, 0.09);
+}
+
+td.save-failed::after {
+  content: "!";
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  color: #c0392b;
+  pointer-events: none;
+}

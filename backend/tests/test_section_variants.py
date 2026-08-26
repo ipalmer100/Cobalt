@@ -140,3 +140,103 @@ def test_banner_row_above_the_header_is_not_mistaken_for_it(tmp_path):
             "Comments": "12 hr cure",
         }
     ]
+
+
+def test_duplicate_header_columns_stay_separately_addressable(tmp_path):
+    """A merged header cell reads out as the same text in every column it
+    spans. Keying rows on that text collapsed two columns into one: the
+    grid showed the last column's value but a write landed in the first,
+    so an edit appeared not to stick. Reported against a Physical
+    Attributes table with a paired tolerance column."""
+    path = str(tmp_path / "dupe.docx")
+    _doc_with(path, [("Physical Attributes & Testing", [
+        ["Attribute", "Tolerance", "Tolerance", "", "Frequency"],
+        ["Repeat", "(-1/32)", "(+1/32)", "5.25", "Once"],
+    ])])
+
+    table = parse_document(path).primary("Physical Attributes & Testing")
+    labels = table.column_labels()
+
+    # every physical column keeps its own identity
+    assert labels == ["Attribute", "Tolerance", "Tolerance (2)", "Column 4", "Frequency"]
+    assert len(set(labels)) == len(labels)
+
+    record = table.records()[0]
+    assert record["Tolerance"] == "(-1/32)"
+    assert record["Tolerance (2)"] == "(+1/32)"
+    assert record["Column 4"] == "5.25"
+
+    # ...and the index the grid derives from a label is the physical column
+    for label, expected_col in [("Tolerance", 1), ("Tolerance (2)", 2), ("Column 4", 3)]:
+        assert labels.index(label) == expected_col
+
+
+def test_specs_spelling_a_column_differently_stay_separately_addressable(tmp_path):
+    """Two plants write the same Bill of Materials column differently --
+    Hazelton "Basis Wt Range", Franklin "Basis Wt range" -- and end their
+    tables with different headings entirely ("Designation" vs "Raw Material
+    Item Code").
+
+    The grid merges the case variants for display and keeps the genuinely
+    different headings apart. It can only do that if the view hands it, per
+    row, the full positional header of *that row's own* table: a row keyed
+    or addressed by some other spec's spelling is a row whose values can't
+    be shown and whose edits can't be written.
+    """
+    hazelton = str(tmp_path / "hazelton.docx")
+    franklin = str(tmp_path / "franklin.docx")
+    _doc_with(hazelton, [("Bill of Materials", [
+        ["Basis Wt", "Basis Wt Range", "Raw Material", "Designation"],
+        ["9.60", "± 0.96", "70ga Matte OPP", "TD18-T 70G"],
+    ])])
+    _doc_with(franklin, [("Bill of Materials", [
+        ["Basis Wt", "Basis Wt range", "Raw Material", "Raw Material Item Code"],
+        ["8.10", "± 0.81", "48ga PET", "RM-4417"],
+    ])])
+
+    entries = [
+        VaultEntry(path=p, spec=parse_document(p), error=None, supported=True)
+        for p in (hazelton, franklin)
+    ]
+    rows = build_view(entries, "Bill of Materials")
+
+    # Each row carries its own table's header, positionally -- that is the
+    # write address, so it must never be borrowed from the other spec.
+    assert rows[0]["_source"]["header_row"] == ["Basis Wt", "Basis Wt Range", "Raw Material", "Designation"]
+    assert rows[1]["_source"]["header_row"] == ["Basis Wt", "Basis Wt range", "Raw Material", "Raw Material Item Code"]
+
+    # ...and each row's values are keyed by that same spelling, so nothing
+    # is stranded under a heading its own spec never used.
+    assert rows[0]["Basis Wt Range"] == "± 0.96"
+    assert rows[0]["Designation"] == "TD18-T 70G"
+    assert rows[1]["Basis Wt range"] == "± 0.81"
+    assert rows[1]["Raw Material Item Code"] == "RM-4417"
+
+    # The position a write targets differs per spec even for the column the
+    # grid shows as one: resolving it against the wrong header would put
+    # Hazelton's edit in Franklin's column.
+    for row in rows:
+        header = row["_source"]["header_row"]
+        label = next(h for h in header if h.lower() == "basis wt range")
+        assert header.index(label) == 1
+        assert row[label].startswith("±")
+
+
+def test_edit_to_a_duplicate_named_column_sticks(tmp_path):
+    """End to end: write through the column the grid would target, and read
+    back the value the grid would display."""
+    from specwrite.docx_writer import write_cell
+
+    path = str(tmp_path / "dupe.docx")
+    _doc_with(path, [("Physical Attributes & Testing", [
+        ["Attribute", "Tolerance", "Tolerance", "Frequency"],
+        ["Repeat", "(-1/32)", "(+1/32)", "Once"],
+    ])])
+    section = "Physical Attributes & Testing"
+    labels = parse_document(path).primary(section).column_labels()
+
+    write_cell(path, section, 1, labels.index("Tolerance"), "0.031")
+
+    record = parse_document(path).primary(section).records()[0]
+    assert record["Tolerance"] == "0.031"       # what was typed
+    assert record["Tolerance (2)"] == "(+1/32)"  # its neighbour untouched

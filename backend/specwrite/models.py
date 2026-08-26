@@ -60,18 +60,40 @@ class ParsedTable:
     # column unmapped and the rows blank in the grid.
     header_index: int = 0
 
+    def column_labels(self) -> list[str]:
+        """One unique label per physical column, position-for-position.
+
+        Header text is not reliably unique. A horizontally-merged header
+        reads out as the same text repeated across the columns it spans --
+        a paired tolerance column pair both come back as "Tolerance" -- and
+        some columns have no header at all. Keying anything on raw header
+        text therefore collapses distinct columns together: two columns
+        become one, the value shown comes from the last of them while a
+        write lands in the first, and the edit appears not to stick.
+
+        Labels stay positional, so ``labels.index(label)`` is always the
+        physical column index, and the suffix makes the duplicate columns
+        distinguishable in the grid instead of silently merged.
+        """
+        if not self.header_row:
+            return []
+        labels: list[str] = []
+        seen: dict[str, int] = {}
+        for index, raw in enumerate(self.header_row):
+            name = (raw or "").strip() or f"Column {index + 1}"
+            count = seen.get(name, 0) + 1
+            seen[name] = count
+            labels.append(name if count == 1 else f"{name} ({count})")
+        return labels
+
     def records(self) -> list[dict[str, str]]:
-        """For RECORDS shape: one dict per data row, keyed by header text."""
+        """For RECORDS shape: one dict per data row, keyed by column label."""
         if self.shape != TableShape.RECORDS or not self.header_row:
             return []
+        labels = self.column_labels()
         out = []
         for row in self.rows[self.header_index + 1:]:
-            out.append(
-                {
-                    self.header_row[i]: row[i]
-                    for i in range(min(len(self.header_row), len(row)))
-                }
-            )
+            out.append({labels[i]: row[i] for i in range(min(len(labels), len(row)))})
         return out
 
     def fields(self) -> dict[str, str]:
@@ -157,7 +179,7 @@ class Spec:
                     {
                         "shape": t.shape.value,
                         "location": t.location,
-                        "header_row": t.header_row,
+                        "header_row": t.column_labels() or t.header_row,
                         "rows": t.rows,
                         "fields": t.fields() if t.shape == TableShape.FIELDS else None,
                         "variant": t.variant,

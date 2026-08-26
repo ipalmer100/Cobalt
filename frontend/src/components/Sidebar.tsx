@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { VaultEntry } from "../types";
 
@@ -45,14 +45,27 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
   // unconditionally (fixed below via virtualization, the bigger cost of
   // the two: thousands of always-mounted buttons made the sidebar visibly
   // slow to render and scroll).
+  const [query, setQuery] = useState("");
+
   const sorted = useMemo(
     () => [...entries].sort((a, b) => fileName(a.path).localeCompare(fileName(b.path))),
     [entries],
   );
+
+  // Search spec number, customer, file name and folder together: people look
+  // for a spec by whichever of those they happen to know.
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    if (!term) return sorted;
+    return sorted.filter((entry) =>
+      [entry.spec_number, entry.customer, fileName(entry.path), relativeFolder(root, entry.path)]
+        .some((field) => (field ?? "").toLowerCase().includes(term)),
+    );
+  }, [sorted, query, root]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
-    count: sorted.length,
+    count: filtered.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => ROW_HEIGHT_ESTIMATE,
     overscan: 12,
@@ -68,13 +81,24 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
           Change
         </button>
       </div>
+      <input
+        className="sidebar-search"
+        placeholder="Search spec # or customer…"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {query.trim() !== "" && (
+        <div className="sidebar-search-count">
+          {filtered.length} of {sorted.length}
+        </div>
+      )}
       <button className="new-spec-button" onClick={onNewSpec}>
         + New Spec
       </button>
       <div className="sidebar-list" ref={scrollRef}>
         <div style={{ position: "relative", height: virtualizer.getTotalSize(), width: "100%" }}>
           {virtualizer.getVirtualItems().map((vi) => {
-            const entry = sorted[vi.index];
+            const entry = filtered[vi.index];
             const isPending = entry.error === CONVERTING_MESSAGE;
             const folder = relativeFolder(root, entry.path);
             return (

@@ -260,7 +260,12 @@ export default function App() {
 
         {mode === "detail" &&
           (spec ? (
-            <SpecDetail spec={spec} onChanged={() => setRefreshToken((t) => t + 1)} defaultWho={who} />
+            <SpecDetail
+            spec={spec}
+            onChanged={() => setRefreshToken((t) => t + 1)}
+            defaultWho={who}
+            who={who}
+          />
           ) : (
             <div className="empty-state">Select a spec from the sidebar.</div>
           ))}

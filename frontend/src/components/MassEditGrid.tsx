@@ -37,8 +37,51 @@ function rowKey(row: ViewRow): string {
   return `${row["File Path"]}|${row._source.section}|${row._source.table_index}|${row._source.row}`;
 }
 
-function cellText(row: ViewRow, column: string): string {
-  return (row[column] as string) ?? "";
+// Two specs describing the same business column rarely spell it the same
+// way: one Bill of Materials says "Basis Wt Range", the next says "Basis Wt
+// range"; a Physical Attributes header wraps "Basis Wt\n(#/ream)" where
+// another puts it on one line. Matching on the raw string made those
+// separate columns, so a spec's values landed under a heading no other spec
+// shared -- and under the heading the grid *did* show, its cell was blank.
+function normalizeColumn(name: string): string {
+  return name.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+// Where a display column lives in one particular source table: `index` is
+// the physical column a write must target, `label` the spelling that table
+// actually uses (which is what a FIELDS write addresses by).
+type ColumnRef = { index: number; label: string };
+
+interface ColumnIndex {
+  columns: string[];
+  /** Per row (keyed on its immutable _source), the layout of its table. */
+  refs: WeakMap<object, Map<string, ColumnRef>>;
+}
+
+const EMPTY_INDEX: ColumnIndex = { columns: [], refs: new WeakMap() };
+
+function refFor(index: ColumnIndex, row: ViewRow, column: string): ColumnRef | undefined {
+  return index.refs.get(row._source as unknown as object)?.get(normalizeColumn(column));
+}
+
+/** The value the grid shows, looked up through this row's own spelling. */
+function cellText(row: ViewRow, column: string, index: ColumnIndex = EMPTY_INDEX): string {
+  const direct = row[column];
+  if (typeof direct === "string") return direct;
+  const ref = refFor(index, row, column);
+  return ref ? ((row[ref.label] as string) ?? "") : "";
+}
+
+/**
+ * A column exists for a row only if that row's table has it *and* the row
+ * physically reaches that far. Merged cells leave short rows, and a cell
+ * that isn't in the document can't be written to -- rendering it as an
+ * inviting empty editor is what let people type into nothing.
+ */
+function hasCell(row: ViewRow, column: string, index: ColumnIndex): boolean {
+  if (column in row) return true;
+  const ref = refFor(index, row, column);
+  return ref != null && ref.label in row;
 }
 
 function displayLabel(column: string, value: string): string {
@@ -56,30 +99,70 @@ function compareValues(a: string, b: string): number {
   return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
 }
 
-// Only the first few rows are examined -- every row in a given section shares
-// the same header_row/field keys, so scanning all of them on every render
-// (which would happen on every single edit, since editing creates a new
-// `rows` array) is wasted work at thousands of rows.
-function columnsFor(rows: ViewRow[]): string[] {
+/**
+ * Build the grid's column list, and for each row a map from column to where
+ * that column sits in *its* table.
+ *
+ * This used to sample only the first five rows, on the assumption that every
+ * row in a section shares one header. Real vaults don't: Hazelton's Bill of
+ * Materials ends in "Designation", Franklin's in "Raw Material Item Code",
+ * and one writes "Basis Wt Range" where the other writes "Basis Wt range".
+ * Sampling five rows meant whichever spec happened to sort first defined the
+ * columns for everyone: another spec's values had nowhere to appear (its
+ * cells read blank even though the document had data), and typing into one
+ * of those blanks threw "column not found" into a banner at the top of the
+ * grid -- unread, hundreds of rows above where the person was working. It
+ * read as "I typed a value and it didn't stick".
+ *
+ * So: scan every row, merge columns that differ only in case or whitespace,
+ * and keep genuinely different headings as their own columns rather than
+ * guessing they mean the same thing.
+ *
+ * Cost is one pass per *fetch*, not per render -- an edit patches row values
+ * but never the table layouts, so the result is cached against the row's
+ * `_source`, which patching preserves.
+ */
+function buildColumnIndex(rows: ViewRow[]): ColumnIndex {
   const trailing: string[] = [];
   if (rows.some((r) => "Variant" in r)) trailing.push("Variant");
   if (rows.some((r) => "Material Type" in r)) trailing.push("Material Type");
   trailing.push("File Path");
+  const skip = new Set([...META_PREFIX, ...trailing, "_source"].map(normalizeColumn));
 
-  const seen = new Set<string>();
-  const data: string[] = [];
-  for (const row of rows.slice(0, 5)) {
-    const headerRow = row._source.header_row;
-    const keys = headerRow ?? Object.keys(row).filter((k) => k !== "_source");
-    for (const key of keys) {
-      if (META_PREFIX.includes(key) || trailing.includes(key) || key === "_source") continue;
-      if (!seen.has(key)) {
-        seen.add(key);
-        data.push(key);
+  const refs = new WeakMap<object, Map<string, ColumnRef>>();
+  const byLayout = new Map<string, Map<string, ColumnRef>>();
+  const display = new Map<string, string>();
+  const order: string[] = [];
+
+  for (const row of rows) {
+    const source = row._source as unknown as object;
+    if (refs.has(source)) continue;
+    const keys = row._source.header_row ?? Object.keys(row).filter((k) => k !== "_source");
+    // JSON, not a join: a separator character could occur inside a
+    // heading and make two different layouts look identical.
+    const signature = JSON.stringify(keys);
+
+    let layout = byLayout.get(signature);
+    if (!layout) {
+      layout = new Map<string, ColumnRef>();
+      keys.forEach((label, index) => {
+        const norm = normalizeColumn(label);
+        // First position wins: a label repeated across a merged header spans
+        // those columns, and the leftmost is the one to write.
+        if (!layout!.has(norm)) layout!.set(norm, { index, label });
+      });
+      byLayout.set(signature, layout);
+      for (const label of keys) {
+        const norm = normalizeColumn(label);
+        if (skip.has(norm) || display.has(norm)) continue;
+        display.set(norm, label);
+        order.push(norm);
       }
     }
+    refs.set(source, layout);
   }
-  return [...META_PREFIX, ...data, ...trailing];
+
+  return { columns: [...META_PREFIX, ...order.map((n) => display.get(n)!), ...trailing], refs };
 }
 
 interface DragState {
@@ -98,6 +181,9 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
+  // cellKey -> why that cell's save failed, so the failure shows where it
+  // happened instead of only in the banner above the grid.
+  const [failedCells, setFailedCells] = useState<Map<string, string>>(new Map());
 
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -152,22 +238,23 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     return () => document.removeEventListener("click", onDocClick);
   }, [openFilterColumn]);
 
-  const columns = useMemo(() => columnsFor(rows), [rows]);
+  const columnIndex = useMemo(() => buildColumnIndex(rows), [rows]);
+  const columns = columnIndex.columns;
 
   const filteredRows = useMemo(() => {
     const active = Object.entries(filters);
     if (active.length === 0) return rows;
-    return rows.filter((row) => active.every(([col, allowed]) => allowed.has(cellText(row, col))));
-  }, [rows, filters]);
+    return rows.filter((row) => active.every(([col, allowed]) => allowed.has(cellText(row, col, columnIndex))));
+  }, [rows, filters, columnIndex]);
 
   const sortedRows = useMemo(() => {
     if (!sortColumn) return filteredRows;
     const sorted = [...filteredRows].sort((a, b) => {
-      const cmp = compareValues(cellText(a, sortColumn), cellText(b, sortColumn));
+      const cmp = compareValues(cellText(a, sortColumn, columnIndex), cellText(b, sortColumn, columnIndex));
       return sortDir === "asc" ? cmp : -cmp;
     });
     return sorted;
-  }, [filteredRows, sortColumn, sortDir]);
+  }, [filteredRows, sortColumn, sortDir, columnIndex]);
 
   const flatRowIndexByKey = useMemo(() => {
     const map = new Map<string, number>();
@@ -179,7 +266,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     if (!groupByColumn) return sortedRows.map((row) => ({ type: "row", row }));
     const groups = new Map<string, ViewRow[]>();
     for (const row of sortedRows) {
-      const key = cellText(row, groupByColumn);
+      const key = cellText(row, groupByColumn, columnIndex);
       const bucket = groups.get(key);
       if (bucket) bucket.push(row);
       else groups.set(key, [row]);
@@ -192,13 +279,13 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
       }
     }
     return items;
-  }, [sortedRows, groupByColumn, collapsedGroups]);
+  }, [sortedRows, groupByColumn, collapsedGroups, columnIndex]);
 
   const distinctValuesForOpenColumn = useMemo(() => {
     if (!openFilterColumn) return [];
-    const set = new Set(rows.map((r) => cellText(r, openFilterColumn)));
+    const set = new Set(rows.map((r) => cellText(r, openFilterColumn, columnIndex)));
     return Array.from(set).sort((a, b) => compareValues(a, b));
-  }, [rows, openFilterColumn]);
+  }, [rows, openFilterColumn, columnIndex]);
 
   const virtualizer = useVirtualizer({
     count: displayItems.length,
@@ -219,22 +306,39 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     });
   }
 
+  function clearFailure(cellKey: string) {
+    setFailedCells((prev) => {
+      if (!prev.has(cellKey)) return prev;
+      const next = new Map(prev);
+      next.delete(cellKey);
+      return next;
+    });
+  }
+
   async function commitEdit(row: ViewRow, column: string, value: string) {
     const key = rowKey(row);
     const cellKey = `${key}:${column}`;
     const source = row._source;
+    const ref = refFor(columnIndex, row, column);
     setSavingKeys((prev) => new Set(prev).add(cellKey));
+    clearFailure(cellKey);
     try {
       if (source.kind === "record") {
-        const colIndex = source.header_row?.indexOf(column) ?? -1;
-        if (colIndex < 0) throw new Error(`Column "${column}" not found in source table`);
-        await writeCell(row["File Path"] as string, source.section, source.row, colIndex, value, who, source.table_index);
+        if (!ref) throw new Error(`This spec's ${source.section} table has no "${column}" column`);
+        await writeCell(row["File Path"] as string, source.section, source.row, ref.index, value, who, source.table_index);
       } else {
-        await writeField(row["File Path"] as string, source.section, column, value, who, source.table_index);
+        // A FIELDS table is addressed by its own label text, so send the
+        // spelling this spec uses, not the heading the grid displays.
+        await writeField(row["File Path"] as string, source.section, ref?.label ?? column, value, who, source.table_index);
       }
-      patchRows(new Map([[key, { [column]: value }]]));
+      patchRows(new Map([[key, { [ref?.label ?? column]: value }]]));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // Marked on the cell itself, not only in the banner at the top of the
+      // grid: when you are 300 rows down, a banner you can't see is
+      // indistinguishable from the edit silently not saving.
+      const message = e instanceof Error ? e.message : String(e);
+      setFailedCells((prev) => new Map(prev).set(cellKey, message));
+      setError(message);
     } finally {
       setSavingKeys((prev) => {
         const next = new Set(prev);
@@ -255,15 +359,17 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     for (const row of targets) {
       const source = row._source;
       const path = row["File Path"] as string;
+      // Skipped rather than guessed at: a spec whose table has no such
+      // column simply isn't part of this fill.
+      const ref = refFor(columnIndex, row, drag.column);
+      if (!ref) continue;
       if (source.kind === "record") {
-        const colIndex = source.header_row?.indexOf(drag.column) ?? -1;
-        if (colIndex < 0) continue;
         edits.push({
           path,
           section: source.section,
           kind: "record",
           row: source.row,
-          col: colIndex,
+          col: ref.index,
           value: drag.sourceValue,
           table_index: source.table_index,
         });
@@ -272,12 +378,12 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
           path,
           section: source.section,
           kind: "field",
-          label: drag.column,
+          label: ref.label,
           value: drag.sourceValue,
           table_index: source.table_index,
         });
       }
-      patches.set(rowKey(row), { [drag.column]: drag.sourceValue });
+      patches.set(rowKey(row), { [ref.label]: drag.sourceValue });
     }
     if (edits.length === 0) return;
 
@@ -488,6 +594,8 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
                   dragging={dragging}
                   fillHandleEnabled={fillHandleEnabled}
                   savingKeys={savingKeys}
+                  failedCells={failedCells}
+                  columnIndex={columnIndex}
                   onFocusCell={(column) => setActiveCell({ key: rowKey(item.row), column })}
                   onCommitEdit={commitEdit}
                   onHandleMouseDown={(column, value) => {
@@ -522,6 +630,8 @@ interface GridRowProps {
   dragging: DragState | null;
   fillHandleEnabled: boolean;
   savingKeys: Set<string>;
+  failedCells: Map<string, string>;
+  columnIndex: ColumnIndex;
   domIndex: number;
   flatIndex: number;
   measureRef: (el: HTMLElement | null) => void;
@@ -540,6 +650,8 @@ const GridRow = memo(function GridRow({
   dragging,
   fillHandleEnabled,
   savingKeys,
+  failedCells,
+  columnIndex,
   domIndex,
   flatIndex,
   measureRef,
@@ -556,7 +668,7 @@ const GridRow = memo(function GridRow({
     <tr key={key} ref={measureRef} data-index={domIndex} data-row-key={key}>
       {columns.map((col) => {
         const readOnly = !editable || readonlyColumns.includes(col);
-        const value = cellText(row, col);
+        const value = cellText(row, col, columnIndex);
         if (col === "File Path") {
           return (
             <td key={col} title={value}>
@@ -567,15 +679,25 @@ const GridRow = memo(function GridRow({
         if (readOnly) {
           return <td key={col}>{value}</td>;
         }
+        // This spec's table simply doesn't have this column. Shown as a
+        // struck-through gap rather than an empty editor, so nobody spends
+        // their afternoon typing into a cell that cannot be saved.
+        if (!hasCell(row, col, columnIndex)) {
+          return (
+            <td key={col} className="cell-absent" title={`This spec's ${row._source.section} table has no "${col}" column`} />
+          );
+        }
         const cellKey = `${key}:${col}`;
         const isActive = activeCell?.key === key && activeCell.column === col;
         const isDragSource = dragging?.sourceKey === key && dragging.column === col;
         const isFillPreview = dragging != null && dragging.column === col && rowInDragRange && !isDragSource;
         const isSaving = savingKeys.has(cellKey);
+        const failure = failedCells.get(cellKey);
         return (
           <td
             key={col}
-            className={`${isSaving ? "saving" : ""} ${isActive ? "active-cell" : ""} ${isFillPreview ? "fill-preview" : ""}`}
+            title={failure}
+            className={`${isSaving ? "saving" : ""} ${isActive ? "active-cell" : ""} ${isFillPreview ? "fill-preview" : ""} ${failure ? "save-failed" : ""}`}
             style={{ position: "relative" }}
           >
             <EditableCellInput
@@ -625,8 +747,14 @@ interface EditableCellInputProps {
 function EditableCellInput({ value, onFocus, onCommit }: EditableCellInputProps) {
   const [local, setLocal] = useState(value);
   const ref = useRef<HTMLTextAreaElement | null>(null);
+  const editing = useRef(false);
 
   useEffect(() => {
+    // ...but not out from under someone who is mid-keystroke. Refreshes
+    // arrive constantly (every save broadcasts, and the watcher re-indexes
+    // again behind it), and resyncing while the cell has focus would erase
+    // what is being typed just before it gets committed.
+    if (editing.current) return;
     setLocal(value);
   }, [value]);
 
@@ -639,18 +767,23 @@ function EditableCellInput({ value, onFocus, onCommit }: EditableCellInputProps)
       rows={rows}
       value={local}
       onChange={(e) => setLocal(e.target.value)}
-      onFocus={onFocus}
+      onFocus={() => {
+        editing.current = true;
+        onFocus();
+      }}
       onKeyDown={(e) => {
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           ref.current?.blur();
         } else if (e.key === "Escape") {
           e.preventDefault();
+          editing.current = false;
           setLocal(value);
           ref.current?.blur();
         }
       }}
       onBlur={() => {
+        editing.current = false;
         if (local !== value) onCommit(local);
       }}
     />

@@ -82,7 +82,11 @@ def _emit(spec: Spec, table: ParsedTable, section: str, extra: dict | None = Non
                     "section": section,
                     "kind": kind,
                     "row": row_index,
-                    "header_row": table.header_row,
+                    # Unique per-column labels, not raw header text: the grid
+                    # finds a column's physical index with indexOf on this,
+                    # and repeated header text would send the write to the
+                    # wrong column (see ParsedTable.column_labels).
+                    "header_row": table.column_labels() or table.header_row,
                     "table_index": table.table_index,
                     "variant": table.variant,
                 },
