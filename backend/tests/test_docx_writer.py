@@ -130,3 +130,85 @@ def test_write_cell_preserves_embedded_newlines(tmp_path):
     value = parse_document(path).primary("Bill of Materials").rows[1][1]
     assert value == multiline
     assert "\n" in value
+
+
+def test_concurrent_writes_to_one_spec_do_not_corrupt_it(tmp_path):
+    """Two saves overlapping on the same file used to destroy it.
+
+    Every write here is read-modify-write over the whole .docx, and
+    ``doc.save(path)`` truncates the file and then streams a fresh zip into
+    it. Two of those at once interleave, and the result is a spec Word --
+    and python-docx -- can no longer open ("File name in directory
+    'word/_rels/document.xml.rels' and header ... differ").
+
+    Reachable in ordinary use, and much more so now that Spec Detail is
+    editable: commit a cell, click straight into the next one and commit
+    that, and the second save begins before the first has finished.
+    """
+    import threading
+    import zipfile
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path)
+
+    errors: list[BaseException] = []
+
+    def hammer(worker: int) -> None:
+        try:
+            for i in range(6):
+                write_cell(path, "Bill of Materials", 1, 2, f"w{worker}-{i}")
+        except BaseException as exc:  # noqa: BLE001 - reported, not swallowed
+            errors.append(exc)
+
+    threads = [threading.Thread(target=hammer, args=(w,)) for w in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+    # Still a valid zip, and still a readable spec.
+    assert zipfile.ZipFile(path).testzip() is None
+    spec = parse_document(path)
+    assert spec.primary("Bill of Materials").rows[1][2].startswith("w")
+    # Nothing else got mangled on the way through.
+    assert spec.primary("Bill of Materials").header_row == (
+        parse_document(path).primary("Bill of Materials").header_row
+    )
+
+
+def test_a_failed_save_leaves_the_original_intact(tmp_path):
+    """The document is replaced by an atomic rename, so an interrupted save
+    can't leave a half-written spec where the customer's document was, and
+    can't leave a temp file behind for the vault indexer to trip over."""
+    import zipfile
+
+    from specwrite.docx_writer import _save_atomically
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path)
+    write_cell(path, "Bill of Materials", 1, 2, "Original Supplier")
+    before = open(path, "rb").read()
+
+    boom = RuntimeError("disk full")
+
+    class HalfWritingDoc:
+        """Saves some bytes, then dies -- what a full disk or a killed
+        process actually looks like."""
+
+        def save(self, target):
+            with open(target, "wb") as fh:
+                fh.write(b"PK\x03\x04 truncated")
+            raise boom
+
+    try:
+        _save_atomically(HalfWritingDoc(), path)
+    except RuntimeError as exc:
+        assert exc is boom
+    else:
+        raise AssertionError("expected the save to fail")
+
+    assert open(path, "rb").read() == before
+    assert zipfile.ZipFile(path).testzip() is None
+    assert parse_document(path).primary("Bill of Materials").rows[1][2] == "Original Supplier"
+    assert list(tmp_path.glob(".*specwrite-tmp")) == []

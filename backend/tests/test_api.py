@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -411,11 +413,42 @@ def test_batch_cell_write_logs_one_audit_entry_per_file_not_per_cell(client, tmp
     assert entry_a["edits"][0]["new_value"] == "V1"
 
 
-def test_browse_lists_roots_when_no_path_given(client):
-    """The picker needs a starting point before any path is chosen."""
-    r = client.get("/browse")
-    assert r.status_code == 200
-    body = r.json()
+def test_browse_starts_on_the_desktop(client, tmp_path, monkeypatch):
+    """The picker opens on the Desktop, not on a bare list of drive letters.
+
+    "C:\\" and its forty system folders is where people lose track of where
+    they are; the Desktop is the landmark they navigate from, and a synced
+    SharePoint library is usually a step or two off it.
+    """
+    desktop = tmp_path / "Desktop"
+    (desktop / "Specs").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    body = client.get("/browse").json()
+
+    assert body["path"] == str(desktop)
+    assert [e["name"] for e in body["entries"]] == ["Specs"]
+    assert body["parent"] == str(tmp_path)
+
+
+def test_browse_finds_a_onedrive_redirected_desktop(client, tmp_path, monkeypatch):
+    """On a OneDrive-backed profile the real Desktop lives under the
+    OneDrive folder rather than directly in the home directory — which is
+    exactly the setup these specs are synced on."""
+    desktop = tmp_path / "OneDrive - Toppan" / "Desktop"
+    desktop.mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    assert client.get("/browse").json()["path"] == str(desktop)
+
+
+def test_browse_falls_back_to_roots_without_a_desktop(client, tmp_path, monkeypatch):
+    """A renamed or redirected Desktop must not leave the picker with
+    nowhere to start."""
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+
+    body = client.get("/browse").json()
+
     assert body["path"] is None
     assert len(body["entries"]) > 0
 

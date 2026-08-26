@@ -244,6 +244,30 @@ def _drive_roots() -> list[dict]:
     return roots
 
 
+def _default_browse_start() -> Path | None:
+    """Where the folder picker opens when nothing has been chosen yet.
+
+    The Desktop, because that is the landmark people navigate from — and on
+    a OneDrive-backed profile the real Desktop lives under the OneDrive
+    folder, not directly under the home directory, so both are checked.
+    Returns None when there's no Desktop to be found, leaving the caller to
+    fall back to the drive list.
+    """
+    home = Path.home()
+    candidates = [home / "Desktop"]
+    try:
+        candidates.extend(sorted(home.glob("OneDrive*/Desktop")))
+    except OSError:
+        pass
+    for candidate in candidates:
+        try:
+            if candidate.is_dir():
+                return candidate
+        except OSError:
+            continue
+    return None
+
+
 def _count_specs_directly_in(directory: Path) -> int:
     """Spec files sitting in this folder itself (not its subfolders) — enough
     of a hint that you're in the right place, without walking the tree."""
@@ -268,7 +292,16 @@ def browse_folders(path: str | None = None) -> dict:
     the browsing happens here, on the machine that actually has the files.
     """
     if not path:
-        return {"path": None, "parent": None, "entries": _drive_roots(), "spec_count": 0}
+        # Open on the Desktop rather than a bare list of drive letters:
+        # a synced SharePoint library and most working folders are a step
+        # or two from there, and "C:\" with 40 system folders under it is
+        # where people get lost. Falls back to the drive list if there is
+        # no Desktop (renamed, redirected, or a non-Windows machine).
+        desktop = _default_browse_start()
+        if desktop is not None:
+            path = str(desktop)
+        else:
+            return {"path": None, "parent": None, "entries": _drive_roots(), "spec_count": 0}
 
     try:
         target = Path(path).expanduser().resolve()

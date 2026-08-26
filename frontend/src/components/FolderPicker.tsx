@@ -45,7 +45,14 @@ export default function FolderPicker({ initialPath, onPick, onClose }: Props) {
           included automatically.
         </p>
 
-        <div className="folder-picker-path">{data?.path ?? "This computer"}</div>
+        <div className="folder-picker-bar">
+          <div className="folder-picker-path">{data?.path ?? "This computer"}</div>
+          {/* Asking with no path lands on the Desktop (the backend's
+              default), so this is the way back after wandering off. */}
+          <button className="folder-picker-home" onClick={() => load(undefined)}>
+            Desktop
+          </button>
+        </div>
         {data?.path && (
           <div className="folder-picker-count">
             {data.spec_count > 0

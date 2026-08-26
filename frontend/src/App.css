@@ -329,17 +329,34 @@ table.records-table.editable td.saving {
   background: rgba(124, 58, 237, 0.15);
 }
 
-table.records-table.editable input,
+/* Only `textarea.cell-editor` -- every cell editor is a textarea now, and a
+   bare `input` selector here also caught the filter menu's search box and
+   its checkboxes, which live inside a <th> of this same table. */
 table.records-table.editable textarea.cell-editor {
+  /* Fills the cell, so clicking anywhere in it starts editing rather than
+     only landing on the glyphs. The td drops its own padding and the
+     editor carries it instead, so there is no dead border to click into. */
   width: 100%;
+  height: 100%;
+  box-sizing: border-box;
   border: none;
   background: transparent;
   color: var(--text);
   font-size: 12px;
-  padding: 2px;
+  padding: 3px 4px;
 }
 
-table.records-table.editable input:focus,
+/* An editable cell is all editor -- see above. `height: 0` is the table
+   trick that makes the child's `height: 100%` resolve against the row's
+   real height instead of being ignored: rows still size to their tallest
+   cell, but a one-line editor in a five-line row stretches to fill rather
+   than leaving dead space below it that clicks fall into. */
+table.records-table.editable td:has(> textarea.cell-editor) {
+  padding: 0;
+  height: 0;
+  cursor: text;
+}
+
 table.records-table.editable textarea.cell-editor:focus {
   outline: 1px solid var(--accent);
   background: var(--bg);
@@ -405,9 +422,22 @@ table.records-table.editable textarea.cell-editor:focus {
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  width: 220px;
   padding: 8px;
   font-weight: normal;
+  /* Draggable from the bottom-right corner: customer and material names
+     run long, and 220px of ellipsis is no way to tell two of them apart.
+     A column layout so the value list -- not the search box or the
+     footer -- takes up whatever height gets dragged out. */
+  width: 240px;
+  height: 320px;
+  min-width: 200px;
+  min-height: 180px;
+  max-width: 90vw;
+  max-height: 80vh;
+  resize: both;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   text-transform: none;
   letter-spacing: normal;
   font-size: 12px;
@@ -442,11 +472,22 @@ table.records-table.editable textarea.cell-editor:focus {
 }
 
 .filter-menu-list {
-  max-height: 180px;
+  /* Takes the slack when the menu is resized, and is the only part that
+     scrolls, so the search box and Apply stay put. */
+  flex: 1 1 auto;
+  min-height: 60px;
   overflow: auto;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
   padding: 4px 0;
+}
+
+/* These keep their natural size while the list absorbs the resize. */
+.filter-menu-search,
+.filter-menu-all,
+.filter-menu-count,
+.filter-menu-footer {
+  flex: 0 0 auto;
 }
 
 .filter-menu-item {
@@ -836,10 +877,25 @@ td.fill-preview {
   letter-spacing: 0.04em;
 }
 
+/* Transparent with muted text read as disabled -- people didn't try
+   "Browse…" because it looked like it wasn't available yet. Full-contrast
+   text on a raised surface, so an enabled button looks enabled; only a
+   genuinely disabled one dims. */
 button.secondary {
-  background: transparent;
-  color: var(--text-muted);
+  background: var(--bg-sidebar, var(--bg));
+  color: var(--text);
   border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+button.secondary:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+button.secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Which of a spec's several same-section tables this one is ("Duplex"). */
@@ -1146,4 +1202,33 @@ td.save-failed::after {
   line-height: 1;
   color: #c0392b;
   pointer-events: none;
+}
+
+/* Current folder plus a way back to the Desktop, so wandering into
+   C:\Windows isn't a dead end. */
+.folder-picker-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.folder-picker-bar .folder-picker-path {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.folder-picker-home {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-sidebar, var(--bg));
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.folder-picker-home:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }

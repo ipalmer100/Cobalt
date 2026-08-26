@@ -699,6 +699,16 @@ const GridRow = memo(function GridRow({
             title={failure}
             className={`${isSaving ? "saving" : ""} ${isActive ? "active-cell" : ""} ${isFillPreview ? "fill-preview" : ""} ${failure ? "save-failed" : ""}`}
             style={{ position: "relative" }}
+            // The editor fills the cell, but a row is as tall as its
+            // tallest cell -- so a one-line value in a row with a
+            // five-line neighbour still leaves bare td underneath.
+            // Clicking that used to do nothing, which read as the cell
+            // only responding to its text. Anything that reaches the td
+            // itself (not the editor, not the fill handle) focuses it.
+            onClick={(e) => {
+              if (e.target !== e.currentTarget) return;
+              e.currentTarget.querySelector("textarea")?.focus();
+            }}
           >
             <EditableCellInput
               value={value}

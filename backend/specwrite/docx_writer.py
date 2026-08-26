@@ -14,14 +14,64 @@ block without touching the rest of the file.
 from __future__ import annotations
 
 import io
+import os
 import re
+import threading
+from contextlib import contextmanager
 from datetime import date as date_cls
+from pathlib import Path
 
 from docx import Document
 from docx.table import Table, _Cell
 
 from .docx_sections import PRODUCT_DESCRIPTION, extract_product_description, find_body_section_tables
 from .models import ParsedTable
+
+# One lock per spec file. Every write here is read-modify-write over the
+# whole .docx, so two overlapping writes to one file both read the old
+# bytes -- and, worse, both stream a fresh zip into the same path at once,
+# interleaving into a file Word can no longer open. That is reachable in
+# ordinary use: commit a cell, click straight into the next one and commit
+# that too, and the second save starts before the first has finished.
+_file_locks: dict[str, threading.Lock] = {}
+_file_locks_guard = threading.Lock()
+
+
+def _lock_key(path: str) -> str:
+    """Same file, same lock, however the path was spelled."""
+    try:
+        return os.path.normcase(str(Path(path).resolve()))
+    except OSError:
+        return os.path.normcase(os.path.abspath(path))
+
+
+@contextmanager
+def _exclusive(path: str):
+    key = _lock_key(path)
+    with _file_locks_guard:
+        lock = _file_locks.setdefault(key, threading.Lock())
+    with lock:
+        yield
+
+
+def _save_atomically(doc, path: str) -> None:  # noqa: ANN001
+    """Write to a sibling temp file, then rename over the original.
+
+    ``doc.save(path)`` truncates the customer's document and then streams a
+    new zip into it, so anything that interrupts it -- a crash, the app
+    being closed, a sync client reading mid-write -- leaves a spec that no
+    longer opens, with no copy of what was there before. ``os.replace`` is
+    atomic on both POSIX and Windows: the file is either wholly the old
+    version or wholly the new one.
+    """
+    target = Path(path)
+    temp = target.with_name(f".{target.name}.specwrite-tmp")
+    try:
+        doc.save(str(temp))
+        os.replace(temp, target)
+    except BaseException:
+        temp.unlink(missing_ok=True)
+        raise
 
 
 def set_cell_text(cell: _Cell, value: str) -> None:
@@ -159,28 +209,31 @@ def apply_to_bytes(data: bytes, mutate) -> bytes:  # noqa: ANN001
 def write_cell(path: str, section: str, row: int, col: int, value: str, table_index: int | None = None) -> None:
     """Open a spec, write one cell by address in the named section, save.
     The mass-edit grid's primary write path."""
-    doc = Document(path)
-    table = _resolve_table(doc, section, table_index)
-    write_record_cell(table, row, col, value)
-    doc.save(path)
+    with _exclusive(path):
+        doc = Document(path)
+        table = _resolve_table(doc, section, table_index)
+        write_record_cell(table, row, col, value)
+        _save_atomically(doc, path)
 
 
 def write_field_value(path: str, section: str, label: str, value: str, table_index: int | None = None) -> bool:
     """Open a spec, write one ``Label:`` field's value in the named section, save."""
-    doc = Document(path)
-    table = _resolve_table(doc, section, table_index)
-    found = write_field(table, label, value)
-    if found:
-        doc.save(path)
-    return found
+    with _exclusive(path):
+        doc = Document(path)
+        table = _resolve_table(doc, section, table_index)
+        found = write_field(table, label, value)
+        if found:
+            _save_atomically(doc, path)
+        return found
 
 
 def append_row(path: str, section: str, values: list[str], table_index: int | None = None) -> None:
     """Open a spec, append a data row to a RECORDS-shape section, save."""
-    doc = Document(path)
-    table = _resolve_table(doc, section, table_index)
-    add_record_row(table, values)
-    doc.save(path)
+    with _exclusive(path):
+        doc = Document(path)
+        table = _resolve_table(doc, section, table_index)
+        add_record_row(table, values)
+        _save_atomically(doc, path)
 
 
 def write_edits_batch(edits: list[dict]) -> None:
@@ -198,56 +251,63 @@ def write_edits_batch(edits: list[dict]) -> None:
         by_path.setdefault(edit["path"], []).append(edit)
 
     for path, path_edits in by_path.items():
-        doc = Document(path)
-        table_cache: dict[tuple[str, int | None], Table] = {}
-        for edit in path_edits:
-            section = edit["section"]
-            table_index = edit.get("table_index")
-            cache_key = (section, table_index)
-            table = table_cache.get(cache_key)
-            if table is None:
-                table = _resolve_table(doc, section, table_index)
-                table_cache[cache_key] = table
-            if edit["kind"] == "record":
-                write_record_cell(table, edit["row"], edit["col"], edit["value"])
-            else:
-                write_field(table, edit["label"], edit["value"])
-        doc.save(path)
+        with _exclusive(path):
+            doc = Document(path)
+            table_cache: dict[tuple[str, int | None], Table] = {}
+            for edit in path_edits:
+                section = edit["section"]
+                table_index = edit.get("table_index")
+                cache_key = (section, table_index)
+                table = table_cache.get(cache_key)
+                if table is None:
+                    table = _resolve_table(doc, section, table_index)
+                    table_cache[cache_key] = table
+                if edit["kind"] == "record":
+                    write_record_cell(table, edit["row"], edit["col"], edit["value"])
+                else:
+                    write_field(table, edit["label"], edit["value"])
+            _save_atomically(doc, path)
 
 
 def clear_records(path: str, section: str, table_index: int | None = None) -> None:
     """Remove every data row from a RECORDS-shape section, keeping only
     the header row. Used when spinning up a new spec (duplicate or blank
     template) so its Revision History doesn't inherit another spec's log."""
-    doc = Document(path)
-    table = _resolve_table(doc, section, table_index)
-    for row in list(table.rows[1:]):
-        row._tr.getparent().remove(row._tr)
-    doc.save(path)
+    with _exclusive(path):
+        doc = Document(path)
+        table = _resolve_table(doc, section, table_index)
+        for row in list(table.rows[1:]):
+            row._tr.getparent().remove(row._tr)
+        _save_atomically(doc, path)
 
 
 def apply_revision(path: str, who: str, revision_text: str, revision_date: date_cls | None = None) -> str:
     """Append a Revision History row and bump the Revision # in Product
     Description. Returns the new revision number. Generalizes
     wrdRevision.bas's ``tbl.Rows.Add`` + header cell-address write."""
-    doc = Document(path)
-    body_tables, _ = find_body_section_tables(doc)
-    rev_tables = body_tables.get("Revision History")
-    if not rev_tables:
-        raise ValueError("Revision History section not found")
+    # Held for the whole read-modify-write: the new revision number is
+    # derived from the last row that's currently there, so two revisions
+    # racing would both read the same previous number and one would be
+    # lost -- taking the Revision # / Revision History pairing with it.
+    with _exclusive(path):
+        doc = Document(path)
+        body_tables, _ = find_body_section_tables(doc)
+        rev_tables = body_tables.get("Revision History")
+        if not rev_tables:
+            raise ValueError("Revision History section not found")
 
-    rev_table = doc.tables[rev_tables[0].table_index]
-    last_row_values = [c.text.strip() for c in rev_table.rows[-1].cells]
-    previous_rev = last_row_values[0] if last_row_values else ""
-    new_rev = _next_revision_number(previous_rev)
-    rev_date = (revision_date or date_cls.today()).strftime("%m/%d/%Y")
+        rev_table = doc.tables[rev_tables[0].table_index]
+        last_row_values = [c.text.strip() for c in rev_table.rows[-1].cells]
+        previous_rev = last_row_values[0] if last_row_values else ""
+        new_rev = _next_revision_number(previous_rev)
+        rev_date = (revision_date or date_cls.today()).strftime("%m/%d/%Y")
 
-    add_record_row(rev_table, [new_rev, who, rev_date, revision_text])
+        add_record_row(rev_table, [new_rev, who, rev_date, revision_text])
 
-    pd_parsed: ParsedTable = extract_product_description(doc)
-    if pd_parsed.location != "missing":
-        source = doc.sections[0].header.tables[0] if pd_parsed.location == "header" else doc.tables[pd_parsed.table_index]
-        write_field(source, "Revision #", new_rev)
+        pd_parsed: ParsedTable = extract_product_description(doc)
+        if pd_parsed.location != "missing":
+            source = doc.sections[0].header.tables[0] if pd_parsed.location == "header" else doc.tables[pd_parsed.table_index]
+            write_field(source, "Revision #", new_rev)
 
-    doc.save(path)
-    return new_rev
+        _save_atomically(doc, path)
+        return new_rev
