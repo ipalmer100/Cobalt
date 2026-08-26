@@ -77,11 +77,42 @@ The script:
    backend, the built frontend, the blank "New Spec" template, and
    (if found) LibreOffice into one app folder.
 
+Before doing any of that it checks that Git, Node and Python 3.11+ are all
+present and stops with a list of what's missing (and where to get it)
+rather than failing halfway through with a confusing error.
+
 Takes a few minutes (longer if bundling LibreOffice — it's copying a few
 hundred MB). When it finishes: **`packaging\dist\SpecWrite\`** is the
 whole app. Copy or zip that folder anywhere — a USB drive, another
 machine, the desktop — and `SpecWrite.exe` inside it is the entire
 "install."
+
+### If the script misbehaves
+
+The `.bat` cannot be executed in the Linux environment this repo is
+developed in, so unlike the rest of the build it has not been run
+end-to-end. If it fails in a way that looks like the script rather than
+your machine, these are the exact commands it runs — do them in order from
+the repo root and you get the same result:
+
+```
+cd frontend
+npm install
+npm run build
+cd ..
+
+REM optional: bundle LibreOffice, skip these two lines to build without it
+set "SPECWRITE_LIBREOFFICE_DIR=%ProgramFiles%\LibreOffice"
+
+py -3 -m venv packaging\.build-venv
+packaging\.build-venv\Scripts\activate.bat
+python -m pip install --upgrade pip
+python -m pip install -e "backend[build]"
+
+pyinstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\specwrite.spec
+```
+
+If `py` isn't recognised, use `python` in its place.
 
 ## Running it
 
