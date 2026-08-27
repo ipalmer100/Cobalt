@@ -1,8 +1,9 @@
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { getView, writeCell, writeCellsBatch, writeField } from "../api";
+import { commitEdits, getView } from "../api";
 import type { BatchEditItem, ViewRow } from "../types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
+import RevisionPrompt from "./RevisionPrompt";
 
 interface Props {
   section: string;
@@ -180,9 +181,16 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
   const [root, setRoot] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
-  // cellKey -> why that cell's save failed, so the failure shows where it
-  // happened instead of only in the banner above the grid.
+  // Edits are held here, keyed by cell, and reach no document until the
+  // revision describing them is written with them. `original` is kept so a
+  // value typed back to what it was stops counting as a change.
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState<Map<string, { edit: BatchEditItem; original: string }>>(new Map());
+  const [prompting, setPrompting] = useState(false);
+  const [committing, setCommitting] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
+  // cellKey -> why that cell can't be staged, shown on the cell itself
+  // rather than only in the banner above the grid.
   const [failedCells, setFailedCells] = useState<Map<string, string>>(new Map());
 
   const [sortColumn, setSortColumn] = useState<string | null>(null);
@@ -294,18 +302,6 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     overscan: 12,
   });
 
-  function patchRows(patches: Map<string, Record<string, string>>) {
-    setRows((prev) => {
-      const map = new Map(prev.map((r, i) => [rowKey(r), i]));
-      const next = [...prev];
-      for (const [key, changes] of patches) {
-        const idx = map.get(key);
-        if (idx != null) next[idx] = { ...next[idx], ...changes };
-      }
-      return next;
-    });
-  }
-
   function clearFailure(cellKey: string) {
     setFailedCells((prev) => {
       if (!prev.has(cellKey)) return prev;
@@ -315,91 +311,101 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     });
   }
 
-  async function commitEdit(row: ViewRow, column: string, value: string) {
-    const key = rowKey(row);
-    const cellKey = `${key}:${column}`;
-    const source = row._source;
+  function draftKey(row: ViewRow, column: string): string {
+    return `${rowKey(row)}:${column}`;
+  }
+
+  /**
+   * Hold one cell's new value. Nothing is written -- staged edits travel to
+   * the documents only when the revision describing them is saved with them.
+   */
+  function stageEdit(row: ViewRow, column: string, value: string) {
+    const key = draftKey(row, column);
     const ref = refFor(columnIndex, row, column);
-    setSavingKeys((prev) => new Set(prev).add(cellKey));
-    clearFailure(cellKey);
-    try {
-      if (source.kind === "record") {
-        if (!ref) throw new Error(`This spec's ${source.section} table has no "${column}" column`);
-        await writeCell(row["File Path"] as string, source.section, source.row, ref.index, value, who, source.table_index);
-      } else {
-        // A FIELDS table is addressed by its own label text, so send the
-        // spelling this spec uses, not the heading the grid displays.
-        await writeField(row["File Path"] as string, source.section, ref?.label ?? column, value, who, source.table_index);
-      }
-      patchRows(new Map([[key, { [ref?.label ?? column]: value }]]));
-    } catch (e) {
-      // Marked on the cell itself, not only in the banner at the top of the
-      // grid: when you are 300 rows down, a banner you can't see is
-      // indistinguishable from the edit silently not saving.
-      const message = e instanceof Error ? e.message : String(e);
-      setFailedCells((prev) => new Map(prev).set(cellKey, message));
-      setError(message);
-    } finally {
-      setSavingKeys((prev) => {
-        const next = new Set(prev);
-        next.delete(cellKey);
-        return next;
-      });
+    const source = row._source;
+    if (!ref) {
+      setFailedCells((prev) =>
+        new Map(prev).set(key, `This spec's ${source.section} table has no "${column}" column`),
+      );
+      return;
+    }
+    clearFailure(key);
+    const original = cellText(row, column, columnIndex);
+    const edit: BatchEditItem =
+      source.kind === "record"
+        ? {
+            path: row["File Path"] as string,
+            section: source.section,
+            kind: "record",
+            row: source.row,
+            col: ref.index,
+            value,
+            table_index: source.table_index,
+          }
+        : {
+            path: row["File Path"] as string,
+            section: source.section,
+            kind: "field",
+            // A FIELDS table is addressed by its own label text, so send the
+            // spelling this spec uses, not the heading the grid displays.
+            label: ref.label,
+            value,
+            table_index: source.table_index,
+          };
+    setDrafts((prev) => {
+      const next = new Map(prev);
+      if (value === original) next.delete(key);
+      else next.set(key, { edit, original });
+      return next;
+    });
+  }
+
+  /** Fill-handle drag: stages the same value down a column, still unwritten. */
+  function stageFill(drag: DragState) {
+    const lo = Math.min(drag.startIndex, drag.currentIndex);
+    const hi = Math.max(drag.startIndex, drag.currentIndex);
+    for (const row of sortedRows.slice(lo, hi + 1)) {
+      if (rowKey(row) === drag.sourceKey) continue;
+      // Skipped rather than guessed at: a spec whose table has no such
+      // column simply isn't part of this fill.
+      if (!refFor(columnIndex, row, drag.column)) continue;
+      if (!hasCell(row, drag.column, columnIndex)) continue;
+      stageEdit(row, drag.column, drag.sourceValue);
     }
   }
 
-  async function commitFill(drag: DragState) {
-    const lo = Math.min(drag.startIndex, drag.currentIndex);
-    const hi = Math.max(drag.startIndex, drag.currentIndex);
-    const targets = sortedRows.slice(lo, hi + 1).filter((r) => rowKey(r) !== drag.sourceKey);
-    if (targets.length === 0) return;
+  function cancelEditing() {
+    setEditing(false);
+    setDrafts(new Map());
+    setFailedCells(new Map());
+    setError(null);
+  }
 
-    const edits: BatchEditItem[] = [];
-    const patches = new Map<string, Record<string, string>>();
-    for (const row of targets) {
-      const source = row._source;
-      const path = row["File Path"] as string;
-      // Skipped rather than guessed at: a spec whose table has no such
-      // column simply isn't part of this fill.
-      const ref = refFor(columnIndex, row, drag.column);
-      if (!ref) continue;
-      if (source.kind === "record") {
-        edits.push({
-          path,
-          section: source.section,
-          kind: "record",
-          row: source.row,
-          col: ref.index,
-          value: drag.sourceValue,
-          table_index: source.table_index,
-        });
-      } else {
-        edits.push({
-          path,
-          section: source.section,
-          kind: "field",
-          label: ref.label,
-          value: drag.sourceValue,
-          table_index: source.table_index,
-        });
-      }
-      patches.set(rowKey(row), { [ref.label]: drag.sourceValue });
-    }
-    if (edits.length === 0) return;
+  const pendingEdits = useMemo(
+    () => [...drafts.values()].filter((d) => d.edit.value !== d.original).map((d) => d.edit),
+    [drafts],
+  );
 
-    const cellKeys = Array.from(patches.keys()).map((k) => `${k}:${drag.column}`);
-    setSavingKeys((prev) => new Set([...prev, ...cellKeys]));
+  const affectedSpecCount = useMemo(
+    () => new Set(pendingEdits.map((e) => e.path)).size,
+    [pendingEdits],
+  );
+
+  async function commitDrafts(whoName: string, revisionText: string) {
+    setCommitting(true);
+    setPromptError(null);
     try {
-      await writeCellsBatch(edits, who);
-      patchRows(patches);
+      await commitEdits(pendingEdits, whoName, revisionText);
+      setDrafts(new Map());
+      setEditing(false);
+      setPrompting(false);
+      await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // Still only in the browser, so there is nothing to reconcile: stay
+      // in edit mode with the drafts intact and let the user retry.
+      setPromptError(e instanceof Error ? e.message : String(e));
     } finally {
-      setSavingKeys((prev) => {
-        const next = new Set(prev);
-        cellKeys.forEach((k) => next.delete(k));
-        return next;
-      });
+      setCommitting(false);
     }
   }
 
@@ -434,7 +440,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     function onMouseUp() {
       if (raf) cancelAnimationFrame(raf);
       setDragging((current) => {
-        if (current) commitFill(current);
+        if (current) stageFill(current);
         return null;
       });
     }
@@ -469,7 +475,9 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     });
   }
 
-  const fillHandleEnabled = !groupByColumn;
+  // Only while editing, and not while grouped (the drag range would jump
+  // across group headers).
+  const fillHandleEnabled = editing && !groupByColumn;
   const virtualItems = virtualizer.getVirtualItems();
   const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
   const paddingBottom = virtualItems.length > 0 ? virtualizer.getTotalSize() - virtualItems[virtualItems.length - 1].end : 0;
@@ -480,10 +488,47 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
       {error && <div className="error">{error}</div>}
       {!editable && (
         <div className="warnings">
-          Revision History is read-only here — it's the audit trail, so it only changes as a
-          unit (new row + Revision # bump) via "Add Revision" on each spec's detail view.
+          Revision History is read-only here — it's the audit trail, so it only ever changes as
+          a unit (new row + Revision # bump), through the revision you describe when saving.
         </div>
       )}
+
+      <div className="grid-edit-bar">
+        {!editing && editable && (
+          <button className="primary" onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        )}
+        {editing && (
+          <>
+            <span className="grid-dirty-count">
+              {pendingEdits.length === 0
+                ? "No changes yet"
+                : `${pendingEdits.length} unsaved ${pendingEdits.length === 1 ? "change" : "changes"} across ` +
+                  `${affectedSpecCount} ${affectedSpecCount === 1 ? "spec" : "specs"}`}
+            </span>
+            <button onClick={cancelEditing}>Cancel</button>
+            <button
+              className="primary"
+              disabled={pendingEdits.length === 0}
+              title={pendingEdits.length === 0 ? "Change something first" : undefined}
+              onClick={() => {
+                setPromptError(null);
+                setPrompting(true);
+              }}
+            >
+              Save…
+            </button>
+          </>
+        )}
+        <span className="grid-edit-hint">
+          {editing
+            ? "Changes are held here until you save. Every spec you touch gets the revision you describe."
+            : editable
+              ? "Read-only. Press Edit to make changes."
+              : ""}
+        </span>
+      </div>
 
       <div className="grid-toolbar">
         <label>
@@ -593,11 +638,12 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
                   activeCell={activeCell}
                   dragging={dragging}
                   fillHandleEnabled={fillHandleEnabled}
-                  savingKeys={savingKeys}
+                  editing={editing}
+                  drafts={drafts}
                   failedCells={failedCells}
                   columnIndex={columnIndex}
                   onFocusCell={(column) => setActiveCell({ key: rowKey(item.row), column })}
-                  onCommitEdit={commitEdit}
+                  onStageEdit={stageEdit}
                   onHandleMouseDown={(column, value) => {
                     setDragging({ column, sourceKey: rowKey(item.row), sourceValue: value, startIndex: flatIndex, currentIndex: flatIndex });
                   }}
@@ -616,6 +662,18 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
       {!loading && rows.length > 0 && sortedRows.length === 0 && (
         <div className="empty">No rows match the current filters.</div>
       )}
+
+      {prompting && (
+        <RevisionPrompt
+          editCount={pendingEdits.length}
+          specSummary={`${affectedSpecCount} ${affectedSpecCount === 1 ? "spec" : "specs"}`}
+          defaultWho={who}
+          busy={committing}
+          error={promptError}
+          onCancel={() => setPrompting(false)}
+          onConfirm={commitDrafts}
+        />
+      )}
     </div>
   );
 }
@@ -629,14 +687,15 @@ interface GridRowProps {
   activeCell: { key: string; column: string } | null;
   dragging: DragState | null;
   fillHandleEnabled: boolean;
-  savingKeys: Set<string>;
+  editing: boolean;
+  drafts: Map<string, { edit: BatchEditItem; original: string }>;
   failedCells: Map<string, string>;
   columnIndex: ColumnIndex;
   domIndex: number;
   flatIndex: number;
   measureRef: (el: HTMLElement | null) => void;
   onFocusCell: (column: string) => void;
-  onCommitEdit: (row: ViewRow, column: string, value: string) => void;
+  onStageEdit: (row: ViewRow, column: string, value: string) => void;
   onHandleMouseDown: (column: string, value: string) => void;
 }
 
@@ -649,14 +708,15 @@ const GridRow = memo(function GridRow({
   activeCell,
   dragging,
   fillHandleEnabled,
-  savingKeys,
+  editing,
+  drafts,
   failedCells,
   columnIndex,
   domIndex,
   flatIndex,
   measureRef,
   onFocusCell,
-  onCommitEdit,
+  onStageEdit,
   onHandleMouseDown,
 }: GridRowProps) {
   const key = rowKey(row);
@@ -667,8 +727,13 @@ const GridRow = memo(function GridRow({
   return (
     <tr key={key} ref={measureRef} data-index={domIndex} data-row-key={key}>
       {columns.map((col) => {
-        const readOnly = !editable || readonlyColumns.includes(col);
-        const value = cellText(row, col, columnIndex);
+        // Not editing means not editable: the grid is a report until Edit
+        // is pressed, which is what makes "no change without a revision"
+        // something the UI enforces rather than merely asks for.
+        const readOnly = !editing || !editable || readonlyColumns.includes(col);
+        const staged = drafts.get(`${key}:${col}`);
+        const stored = cellText(row, col, columnIndex);
+        const value = staged?.edit.value ?? stored;
         if (col === "File Path") {
           return (
             <td key={col} title={value}>
@@ -691,13 +756,13 @@ const GridRow = memo(function GridRow({
         const isActive = activeCell?.key === key && activeCell.column === col;
         const isDragSource = dragging?.sourceKey === key && dragging.column === col;
         const isFillPreview = dragging != null && dragging.column === col && rowInDragRange && !isDragSource;
-        const isSaving = savingKeys.has(cellKey);
+        const dirty = staged != null && staged.edit.value !== staged.original;
         const failure = failedCells.get(cellKey);
         return (
           <td
             key={col}
-            title={failure}
-            className={`${isSaving ? "saving" : ""} ${isActive ? "active-cell" : ""} ${isFillPreview ? "fill-preview" : ""} ${failure ? "save-failed" : ""}`}
+            title={failure ?? (dirty ? `Unsaved. Was: ${staged!.original || "(blank)"}` : undefined)}
+            className={`${dirty ? "cell-dirty" : ""} ${isActive ? "active-cell" : ""} ${isFillPreview ? "fill-preview" : ""} ${failure ? "save-failed" : ""}`}
             style={{ position: "relative" }}
             // The editor fills the cell, but a row is as tall as its
             // tallest cell -- so a one-line value in a row with a
@@ -713,9 +778,9 @@ const GridRow = memo(function GridRow({
             <EditableCellInput
               value={value}
               onFocus={() => onFocusCell(col)}
-              onCommit={(next) => onCommitEdit(row, col, next)}
+              onCommit={(next) => onStageEdit(row, col, next)}
             />
-            {isActive && fillHandleEnabled && !isSaving && (
+            {isActive && fillHandleEnabled && (
               <div
                 className="fill-handle"
                 onMouseDown={(e) => {
@@ -776,7 +841,14 @@ function EditableCellInput({ value, onFocus, onCommit }: EditableCellInputProps)
       className="cell-editor"
       rows={rows}
       value={local}
-      onChange={(e) => setLocal(e.target.value)}
+      onChange={(e) => {
+        setLocal(e.target.value);
+        // Staged as you type, not on blur. Nothing is written either way
+        // now, and the unsaved-changes count and the dirty-cell marks are
+        // the only evidence of what is pending -- they have to be live, or
+        // the grid says "no changes yet" while you are typing into it.
+        onCommit(e.target.value);
+      }}
       onFocus={() => {
         editing.current = true;
         onFocus();

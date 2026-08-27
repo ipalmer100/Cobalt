@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { appendRevision, writeCell, writeField } from "../api";
-import type { SpecDetail as SpecDetailType, SpecSection } from "../types";
+import { useEffect, useMemo, useState } from "react";
+import { commitEdits } from "../api";
+import RevisionPrompt from "./RevisionPrompt";
+import type { BatchEditItem, SpecDetail as SpecDetailType, SpecSection } from "../types";
 
 interface Props {
   spec: SpecDetailType;
@@ -15,129 +16,96 @@ const REVISION_NUMBER = "Revision #";
 /**
  * Locked exactly as the mass-edit grid is, and for the same reason: the
  * Revision History table and Product Description's Revision # only ever
- * move together, through "Add Revision". Editing either directly is what
- * would let a spec's stated revision drift from its own audit trail.
+ * move together, and only through a save's own revision step. Editing
+ * either directly is what would let a spec's stated revision drift from
+ * its own audit trail.
  */
 function isLocked(section: string, label: string): boolean {
   if (section === REVISION_HISTORY) return true;
   return section === "Product Description" && label.replace(/:$/, "").trim() === REVISION_NUMBER;
 }
 
-/** A cell that saves on blur, showing whether it saved or failed. */
-function EditableValue({
-  value,
-  disabled,
-  onCommit,
-}: {
-  value: string;
-  disabled?: boolean;
-  onCommit: (next: string) => Promise<void>;
-}) {
-  const [local, setLocal] = useState(value);
-  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
-  const ref = useRef<HTMLTextAreaElement | null>(null);
-  const editing = useRef(false);
-
-  useEffect(() => {
-    // Saving any one value reloads the whole spec, so every other cell gets
-    // a fresh `value` prop. Resyncing the cell that currently has focus
-    // would wipe what someone is part-way through typing.
-    if (editing.current) return;
-    setLocal(value);
-  }, [value]);
-
-  // A brief confirmation, then back to normal -- editing one spec at a time
-  // means there's no row highlight to lean on, so the cell says so itself.
-  useEffect(() => {
-    if (state !== "saved") return;
-    const timer = setTimeout(() => setState("idle"), 1200);
-    return () => clearTimeout(timer);
-  }, [state]);
-
-  if (disabled) return <span className="detail-locked">{value || "—"}</span>;
-
-  return (
-    <textarea
-      ref={ref}
-      className={`detail-editor ${state}`}
-      rows={Math.min(local.split("\n").length, 6)}
-      value={local}
-      onChange={(e) => setLocal(e.target.value)}
-      onFocus={() => {
-        editing.current = true;
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" && !e.shiftKey) {
-          e.preventDefault();
-          ref.current?.blur();
-        } else if (e.key === "Escape") {
-          e.preventDefault();
-          editing.current = false;
-          setLocal(value);
-          setState("idle");
-          ref.current?.blur();
-        }
-      }}
-      onBlur={async () => {
-        editing.current = false;
-        if (local === value) return;
-        setState("saving");
-        try {
-          await onCommit(local);
-          setState("saved");
-        } catch {
-          setLocal(value); // put back what's actually in the document
-          setState("error");
-        }
-      }}
-    />
-  );
+/** Identifies one editable cell, for keying buffered changes. */
+function cellId(section: string, tableIndex: number | null | undefined, kind: string, a: string | number, b?: number) {
+  return `${section}|${tableIndex ?? -1}|${kind}|${a}${b === undefined ? "" : `|${b}`}`;
 }
 
+/**
+ * One spec at a time, edited as a unit.
+ *
+ * Cells are read-only until Edit is pressed, then changes are held in the
+ * browser and nothing touches the document. Save asks what the revision
+ * was and writes the changes and that statement together, so a spec can
+ * never end up holding edited values with no Revision History row
+ * accounting for them -- and an interrupted save leaves the document
+ * exactly as it was.
+ */
 export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) {
-  const [revisionWho, setRevisionWho] = useState(defaultWho);
-  const [revisionText, setRevisionText] = useState("");
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState<Map<string, { edit: BatchEditItem; original: string }>>(new Map());
+  const [prompting, setPrompting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
 
+  // Switching specs mid-edit would silently strand the drafts against the
+  // wrong document, so leaving edit mode is tied to the spec on screen.
   useEffect(() => {
-    setRevisionWho(defaultWho);
-  }, [defaultWho]);
-
-  async function submitRevision() {
-    if (!revisionWho.trim() || !revisionText.trim()) return;
-    setBusy(true);
+    setEditing(false);
+    setDrafts(new Map());
+    setPrompting(false);
     setError(null);
+  }, [spec.file_path]);
+
+  // A dirty editor plus a browser close is the one way buffered changes can
+  // be lost without the user deciding to lose them. Warn, as any editor does.
+  useEffect(() => {
+    if (drafts.size === 0) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [drafts.size]);
+
+  const pending = useMemo(() => {
+    // A cell typed back to its starting value is not a change.
+    return [...drafts.values()].filter((d) => d.edit.value !== d.original);
+  }, [drafts]);
+
+  function stage(id: string, edit: BatchEditItem, original: string) {
+    setDrafts((prev) => {
+      const next = new Map(prev);
+      if (edit.value === original) next.delete(id);
+      else next.set(id, { edit, original });
+      return next;
+    });
+  }
+
+  function draftValue(id: string, fallback: string): string {
+    return drafts.get(id)?.edit.value ?? fallback;
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setDrafts(new Map());
+    setError(null);
+  }
+
+  async function commit(whoName: string, revisionText: string) {
+    setBusy(true);
+    setPromptError(null);
     try {
-      await appendRevision(spec.file_path, revisionWho.trim(), revisionText.trim());
-      setRevisionText("");
+      await commitEdits(pending.map((d) => d.edit), whoName, revisionText);
+      setDrafts(new Map());
+      setEditing(false);
+      setPrompting(false);
       onChanged();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      // Kept in edit mode with the drafts intact: the changes are still
+      // only in the browser, so there is nothing to reconcile -- the user
+      // can fix the problem and save again.
+      setPromptError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function saveCell(section: SpecSection, name: string, row: number, col: number, value: string) {
-    setError(null);
-    try {
-      await writeCell(spec.file_path, name, row, col, value, who, section.table_index);
-      onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      throw e;
-    }
-  }
-
-  async function saveField(section: SpecSection, name: string, label: string, value: string) {
-    setError(null);
-    try {
-      await writeField(spec.file_path, name, label, value, who, section.table_index);
-      onChanged();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-      throw e;
     }
   }
 
@@ -148,8 +116,42 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
           {spec.spec_number} — {spec.customer}
         </h2>
         <span className="spec-rev">Revision {spec.revision_number}</span>
-        <span className="spec-hint">Click any value to edit it</span>
+
+        <div className="spec-edit-controls">
+          {!editing && (
+            <button className="primary" onClick={() => setEditing(true)}>
+              Edit
+            </button>
+          )}
+          {editing && (
+            <>
+              <span className="spec-dirty-count">
+                {pending.length === 0
+                  ? "No changes yet"
+                  : `${pending.length} unsaved ${pending.length === 1 ? "change" : "changes"}`}
+              </span>
+              <button onClick={cancelEditing}>Cancel</button>
+              <button
+                className="primary"
+                disabled={pending.length === 0}
+                title={pending.length === 0 ? "Change something first" : undefined}
+                onClick={() => {
+                  setPromptError(null);
+                  setPrompting(true);
+                }}
+              >
+                Save…
+              </button>
+            </>
+          )}
+        </div>
       </div>
+
+      <p className="spec-hint">
+        {editing
+          ? "Changes are held here until you save. Saving asks you to describe the revision."
+          : "Read-only. Press Edit to make changes."}
+      </p>
 
       {error && <div className="error banner">{error}</div>}
 
@@ -162,19 +164,19 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
       )}
 
       {Object.entries(spec.sections).map(([name, tables]) =>
-        tables.map((section, ti) => {
+        tables.map((section: SpecSection, ti) => {
           const locked = name === REVISION_HISTORY;
           return (
             <section key={`${name}:${section.table_index}:${ti}`} className="spec-section">
               <h3>
                 {name}
                 {section.variant && <span className="section-variant">{section.variant}</span>}
-                {locked && <span className="section-locked">read-only · use Add Revision</span>}
+                {locked && <span className="section-locked">read-only · set by the revision you describe on save</span>}
               </h3>
               {section.rows.length === 0 && <p className="empty">No data.</p>}
 
               {section.shape === "records" && section.header_row && (
-                <table className="records-table detail-table">
+                <table className={`records-table detail-table${editing && !locked ? " editable" : ""}`}>
                   <thead>
                     <tr>
                       {section.header_row.map((h, i) => (
@@ -185,15 +187,42 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
                   <tbody>
                     {section.rows.slice(1).map((row, r) => (
                       <tr key={r}>
-                        {row.map((cell, c) => (
-                          <td key={c}>
-                            <EditableValue
-                              value={cell}
-                              disabled={locked}
-                              onCommit={(next) => saveCell(section, name, r + 1, c, next)}
-                            />
-                          </td>
-                        ))}
+                        {row.map((cell, c) => {
+                          const id = cellId(name, section.table_index, "record", r + 1, c);
+                          const value = draftValue(id, cell);
+                          const changed = drafts.has(id);
+                          if (!editing || locked) {
+                            return (
+                              <td key={c} className="detail-readonly-cell">
+                                {cell || "—"}
+                              </td>
+                            );
+                          }
+                          return (
+                            <td key={c} className={changed ? "cell-dirty" : ""}>
+                              <textarea
+                                className="cell-editor"
+                                rows={Math.min(value.split("\n").length, 6)}
+                                value={value}
+                                onChange={(e) =>
+                                  stage(
+                                    id,
+                                    {
+                                      path: spec.file_path,
+                                      section: name,
+                                      kind: "record",
+                                      row: r + 1,
+                                      col: c,
+                                      value: e.target.value,
+                                      table_index: section.table_index,
+                                    },
+                                    cell,
+                                  )
+                                }
+                              />
+                            </td>
+                          );
+                        })}
                       </tr>
                     ))}
                   </tbody>
@@ -202,18 +231,42 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
 
               {section.shape === "fields" && section.fields && (
                 <dl className="fields-grid">
-                  {Object.entries(section.fields).map(([label, value]) => (
-                    <div className="field-pair" key={label}>
-                      <dt>{label}</dt>
-                      <dd>
-                        <EditableValue
-                          value={value}
-                          disabled={locked || isLocked(name, label)}
-                          onCommit={(next) => saveField(section, name, label, next)}
-                        />
-                      </dd>
-                    </div>
-                  ))}
+                  {Object.entries(section.fields).map(([label, value]) => {
+                    const fieldLocked = locked || isLocked(name, label);
+                    const id = cellId(name, section.table_index, "field", label);
+                    const shown = draftValue(id, value);
+                    const changed = drafts.has(id);
+                    return (
+                      <div className="field-pair" key={label}>
+                        <dt>{label}</dt>
+                        <dd>
+                          {!editing || fieldLocked ? (
+                            <span className={fieldLocked && editing ? "detail-locked" : ""}>{value || "—"}</span>
+                          ) : (
+                            <textarea
+                              className={`detail-editor${changed ? " dirty" : ""}`}
+                              rows={Math.min(shown.split("\n").length, 6)}
+                              value={shown}
+                              onChange={(e) =>
+                                stage(
+                                  id,
+                                  {
+                                    path: spec.file_path,
+                                    section: name,
+                                    kind: "field",
+                                    label,
+                                    value: e.target.value,
+                                    table_index: section.table_index,
+                                  },
+                                  value,
+                                )
+                              }
+                            />
+                          )}
+                        </dd>
+                      </div>
+                    );
+                  })}
                 </dl>
               )}
             </section>
@@ -221,19 +274,17 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
         }),
       )}
 
-      <section className="spec-section revision-form">
-        <h3>Add Revision</h3>
-        <input placeholder="Your name" value={revisionWho} onChange={(e) => setRevisionWho(e.target.value)} />
-        <input
-          placeholder="What changed?"
-          value={revisionText}
-          onChange={(e) => setRevisionText(e.target.value)}
+      {prompting && (
+        <RevisionPrompt
+          editCount={pending.length}
+          specSummary={`${spec.spec_number || "this spec"}`}
+          defaultWho={who || defaultWho}
+          busy={busy}
+          error={promptError}
+          onCancel={() => setPrompting(false)}
+          onConfirm={commit}
         />
-        <button disabled={busy} onClick={submitRevision}>
-          {busy ? "Saving…" : "Bump revision + log"}
-        </button>
-        {error && <div className="error">{error}</div>}
-      </section>
+      )}
     </div>
   );
 }

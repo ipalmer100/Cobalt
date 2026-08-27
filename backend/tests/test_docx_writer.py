@@ -1,5 +1,6 @@
 import time
 
+import pytest
 from docx import Document
 
 from cobalt.docx_sections import parse_document
@@ -212,3 +213,159 @@ def test_a_failed_save_leaves_the_original_intact(tmp_path):
     assert zipfile.ZipFile(path).testzip() is None
     assert parse_document(path).primary("Bill of Materials").rows[1][2] == "Original Supplier"
     assert list(tmp_path.glob(".*cobalt-tmp")) == []
+
+
+def test_commit_writes_edits_and_the_revision_together(tmp_path):
+    """Revisions are manual but regulatorily required, so the unit of work
+    is "these edits plus this revision statement" -- a spec must never hold
+    edited values with no Revision History row accounting for them."""
+    from cobalt.docx_writer import commit_with_revision
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path, revision="04")
+
+    new_revs = commit_with_revision(
+        {path: [
+            {"section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "New Supplier"},
+        ]},
+        who="Isaac",
+        revision_text="Supplier change per customer request.",
+    )
+
+    assert new_revs == {path: "05"}
+    spec = parse_document(path)
+    assert spec.primary("Bill of Materials").rows[1][2] == "New Supplier"
+    assert spec.revision_number == "05"
+    last_revision = spec.primary("Revision History").rows[-1]
+    assert last_revision[0] == "05"
+    assert last_revision[1] == "Isaac"
+    assert "Supplier change per customer request." in last_revision[3]
+
+
+def test_a_failed_commit_writes_nothing_at_all(tmp_path):
+    """The whole point of buffering: if the save is interrupted, the specs
+    are exactly as they were -- no edited cells, and no revision claiming
+    an edit that isn't there."""
+    import zipfile
+
+    from cobalt.docx_writer import commit_with_revision
+
+    good = str(tmp_path / "good.docx")
+    bad = str(tmp_path / "bad.docx")
+    build_sample_spec_docx(good, revision="04")
+    build_sample_spec_docx(bad, revision="04")
+    before = {p: open(p, "rb").read() for p in (good, bad)}
+
+    with pytest.raises(ValueError):
+        commit_with_revision(
+            {
+                good: [{"section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "Applied?"}],
+                # A section this spec hasn't got: fails while staging, after
+                # the first spec has already been prepared.
+                bad: [{"section": "No Such Section", "kind": "record", "row": 1, "col": 1, "value": "x"}],
+            },
+            who="Isaac",
+            revision_text="Should not land.",
+        )
+
+    for p in (good, bad):
+        assert open(p, "rb").read() == before[p], f"{p} was modified"
+        assert zipfile.ZipFile(p).testzip() is None
+        spec = parse_document(p)
+        assert spec.revision_number == "04"
+        assert "Should not land." not in str(spec.tables)
+    # No staging files left behind for the vault indexer to trip over.
+    assert list(tmp_path.glob(".*cobalt-tmp")) == []
+
+
+def test_commit_spanning_several_specs_revises_each_one(tmp_path):
+    """A mass edit touches many specs; each gets its own revision number
+    bumped and the same statement recorded against it."""
+    from cobalt.docx_writer import commit_with_revision
+
+    paths = []
+    for i, rev in enumerate(["01", "07", "12"]):
+        p = str(tmp_path / f"spec{i}.docx")
+        build_sample_spec_docx(p, revision=rev)
+        paths.append(p)
+
+    new_revs = commit_with_revision(
+        {p: [{"section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "Acme"}] for p in paths},
+        who="Isaac",
+        revision_text="Rolled supplier across the family.",
+    )
+
+    assert [new_revs[p] for p in paths] == ["02", "08", "13"]
+    for p in paths:
+        spec = parse_document(p)
+        assert spec.primary("Bill of Materials").rows[1][2] == "Acme"
+        assert "Rolled supplier across the family." in spec.primary("Revision History").rows[-1][3]
+
+
+def test_commit_leaves_untouched_specs_byte_identical(tmp_path):
+    """A batch must not rewrite specs it wasn't asked to change."""
+    from cobalt.docx_writer import commit_with_revision
+
+    edited = str(tmp_path / "edited.docx")
+    bystander = str(tmp_path / "bystander.docx")
+    build_sample_spec_docx(edited)
+    build_sample_spec_docx(bystander)
+    before = open(bystander, "rb").read()
+
+    commit_with_revision(
+        {edited: [{"section": "Bill of Materials", "kind": "record", "row": 1, "col": 2, "value": "Changed"}]},
+        who="Isaac",
+        revision_text="One spec only.",
+    )
+
+    assert open(bystander, "rb").read() == before
+
+
+def test_revision_number_survives_a_trailing_blank_history_row(tmp_path):
+    """HK0070's Revision History ends in an entirely blank row -- somebody
+    pressed Tab once too often. Reading that as the previous revision
+    restarted a spec sitting at revision 4 back at "01", destroying the
+    sequence the history exists to establish."""
+    from docx import Document as Doc
+
+    from cobalt.docx_writer import apply_revision
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path, revision="4")
+
+    # Give it the trailing blank row the real spec has.
+    doc = Doc(path)
+    rev_index = parse_document(path).primary("Revision History").table_index
+    doc.tables[rev_index].add_row()
+    doc.save(path)
+    assert parse_document(path).primary("Revision History").rows[-1] == ["", "", "", ""]
+
+    new_rev = apply_revision(path, "Isaac", "Next one along.")
+
+    assert new_rev == "5", "must continue the sequence, not restart it"
+    spec = parse_document(path)
+    assert spec.revision_number == "5"
+    rows = spec.primary("Revision History").rows
+    # The blank row is filled rather than left as a gap mid-history.
+    assert rows[-1][0] == "5"
+    assert rows[-1][3] == "Next one along."
+    assert not any(all(c == "" for c in r) for r in rows), "no blank row left in the trail"
+
+
+def test_revision_number_continues_from_whichever_source_is_ahead(tmp_path):
+    """If Product Description and the history disagree, one of them missed a
+    revision -- continuing from the lower would reissue a used number."""
+    from docx import Document as Doc
+
+    from cobalt.docx_writer import apply_revision
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path, revision="09")
+
+    # History left behind at 02 while the stated revision moved on to 09.
+    doc = Doc(path)
+    rev_index = parse_document(path).primary("Revision History").table_index
+    doc.tables[rev_index].rows[1].cells[0].text = "02"
+    doc.save(path)
+
+    assert apply_revision(path, "Isaac", "Catching up.") == "10"

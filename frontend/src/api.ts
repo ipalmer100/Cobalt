@@ -85,6 +85,25 @@ export function writeCellsBatch(edits: BatchEditItem[], who: string) {
   });
 }
 
+export interface CommitResult {
+  ok: boolean;
+  spec_count: number;
+  committed: { path: string; spec_number: string | null; revision_number: string | null; edit_count: number }[];
+}
+
+/**
+ * Write buffered edits and the revision statement that accounts for them,
+ * as one unit. Nothing reaches the documents until this call, and if it
+ * fails no spec is changed -- which is what lets the editing surfaces hold
+ * changes back until the user has described them.
+ */
+export function commitEdits(edits: BatchEditItem[], who: string, revision_text: string) {
+  return request<CommitResult>("/spec/commit", {
+    method: "POST",
+    body: JSON.stringify({ edits, who, revision_text }),
+  });
+}
+
 export function appendRevision(path: string, who: string, revision_text: string) {
   return request<{ ok: boolean; revision_number: string }>("/spec/revision", {
     method: "POST",

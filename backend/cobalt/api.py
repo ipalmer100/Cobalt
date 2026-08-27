@@ -27,7 +27,14 @@ from .audit_log import append_entry, read_entries
 from .creation import CreationError, create_blank_spec, duplicate_spec
 from .docx_sections import ALL_SECTIONS, IGNORE, PRODUCT_DESCRIPTION
 from .section_mappings import delete_mapping, load_mappings, save_mapping
-from .docx_writer import append_row, apply_revision, write_cell, write_edits_batch, write_field_value
+from .docx_writer import (
+    append_row,
+    apply_revision,
+    commit_with_revision,
+    write_cell,
+    write_edits_batch,
+    write_field_value,
+)
 from .vault import Vault, is_spec_file
 from .views import (
     REVISION_HISTORY,
@@ -205,6 +212,17 @@ class WriteCellsBatchRequest(BaseModel):
 
 class ReviseRequest(BaseModel):
     path: str
+    who: str
+    revision_text: str
+
+
+class CommitRequest(BaseModel):
+    """A batch of edits plus the revision statement that accounts for them.
+
+    One unit of work: the specs touched come out holding both, or neither.
+    """
+
+    edits: list[BatchEditItem]
     who: str
     revision_text: str
 
@@ -565,6 +583,91 @@ def post_revision(req: ReviseRequest) -> dict:
         revision_text=req.revision_text,
     )
     return {"ok": True, "revision_number": new_rev}
+
+
+@app.post("/spec/commit")
+def post_commit(req: CommitRequest) -> dict:
+    """Write a batch of edits together with the revision describing them.
+
+    The editing surfaces buffer changes in the browser and send them here in
+    one call, rather than saving each cell as it is typed. Revisions are
+    manual but regulatorily required, so a spec holding edited values with
+    no Revision History row to account for them is a defect, not a
+    transient state -- and an interrupted save must leave the documents
+    untouched rather than half-updated.
+    """
+    vault = _vault()
+    if not req.edits:
+        raise HTTPException(status_code=422, detail="Nothing to save.")
+    if not req.revision_text.strip():
+        raise HTTPException(status_code=422, detail="A revision description is required.")
+    if not req.who.strip():
+        raise HTTPException(status_code=422, detail="Your name is required to record a revision.")
+
+    # Same locks the single-cell endpoints enforce: the revision number and
+    # the Revision History table only ever move together, through this
+    # commit's own revision step, never as ordinary edited cells.
+    for edit in req.edits:
+        _require_within_vault(vault, edit.path)
+        _require_not_revision_locked(edit.section, edit.label)
+
+    edits_by_path: dict[str, list[dict]] = {}
+    for edit in req.edits:
+        edits_by_path.setdefault(edit.path, []).append(edit.model_dump())
+
+    # Captured before the write so the audit log can show what each cell
+    # changed from, not just what it changed to.
+    old_values: dict[int, str | None] = {}
+    for i, edit in enumerate(req.edits):
+        if edit.kind == "record":
+            old_values[i] = _current_cell_value(vault, edit.path, edit.section, edit.row, edit.col, edit.table_index)
+        else:
+            old_values[i] = _current_field_value(vault, edit.path, edit.section, edit.label, edit.table_index)
+
+    try:
+        new_revisions = commit_with_revision(edits_by_path, req.who, req.revision_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    for path in edits_by_path:
+        vault.refresh(path)
+
+    per_path: dict[str, list[dict]] = {}
+    for i, edit in enumerate(req.edits):
+        per_path.setdefault(edit.path, []).append(
+            {
+                "section": edit.section,
+                "kind": edit.kind,
+                "row": edit.row,
+                "col": edit.col,
+                "label": edit.label,
+                "old_value": old_values[i],
+                "new_value": edit.value,
+            }
+        )
+
+    committed = []
+    for path, path_edits in per_path.items():
+        append_entry(
+            vault.root,
+            "commit_revision",
+            req.who,
+            file_path=path,
+            spec_number=_spec_number_for(vault, path),
+            revision_number=new_revisions.get(path),
+            revision_text=req.revision_text,
+            edits=path_edits,
+        )
+        committed.append(
+            {
+                "path": path,
+                "spec_number": _spec_number_for(vault, path),
+                "revision_number": new_revisions.get(path),
+                "edit_count": len(path_edits),
+            }
+        )
+
+    return {"ok": True, "committed": committed, "spec_count": len(committed)}
 
 
 @app.post("/spec/duplicate")

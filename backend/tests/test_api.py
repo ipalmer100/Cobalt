@@ -496,3 +496,148 @@ def test_specs_in_subfolders_are_indexed(client, tmp_path):
 
     assert len(entries) == 2
     assert {e["spec_number"] for e in entries} == {"HK0071", "HK0600"}
+
+
+def _bom_edit(path, value="Committed Supplier"):
+    return {
+        "path": path,
+        "section": "Bill of Materials",
+        "kind": "record",
+        "row": 1,
+        "col": 2,
+        "value": value,
+    }
+
+
+def test_commit_records_the_revision_alongside_the_edits(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path, revision="03")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/commit",
+        json={"edits": [_bom_edit(path)], "who": "Isaac", "revision_text": "Supplier updated."},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["spec_count"] == 1
+    assert body["committed"][0]["revision_number"] == "04"
+
+    detail = client.get("/spec", params={"path": path}).json()
+    assert detail["revision_number"] == "04"
+    rows = detail["sections"]["Revision History"][0]["rows"]
+    assert rows[-1][3] == "Supplier updated."
+
+
+def test_commit_refuses_without_a_revision_description(client, tmp_path):
+    """The coupling only means anything if it can't be skipped."""
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/commit",
+        json={"edits": [_bom_edit(path)], "who": "Isaac", "revision_text": "   "},
+    )
+    assert r.status_code == 422
+    assert "revision description" in r.json()["detail"].lower()
+
+    # ...and nothing was written.
+    detail = client.get("/spec", params={"path": path}).json()
+    assert detail["sections"]["Bill of Materials"][0]["rows"][1][2] != "Committed Supplier"
+
+
+def test_commit_refuses_without_a_name(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/commit",
+        json={"edits": [_bom_edit(path)], "who": "", "revision_text": "Something."},
+    )
+    assert r.status_code == 422
+    assert "name" in r.json()["detail"].lower()
+
+
+def test_commit_cannot_smuggle_an_edit_into_revision_history(client, tmp_path):
+    """The audit trail is still only writable through the revision step."""
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/commit",
+        json={
+            "edits": [{
+                "path": path, "section": "Revision History", "kind": "record",
+                "row": 1, "col": 3, "value": "Rewritten history",
+            }],
+            "who": "Isaac",
+            "revision_text": "Trying it on.",
+        },
+    )
+    assert r.status_code == 422
+    assert "Add Revision" in r.json()["detail"]
+
+    detail = client.get("/spec", params={"path": path}).json()
+    assert detail["sections"]["Revision History"][0]["rows"][1][3] == "Spec created."
+
+
+def test_commit_cannot_smuggle_a_revision_number_edit(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path, revision="06")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/commit",
+        json={
+            "edits": [{
+                "path": path, "section": "Product Description", "kind": "field",
+                "label": "Revision #", "value": "99",
+            }],
+            "who": "Isaac",
+            "revision_text": "Trying it on.",
+        },
+    )
+    assert r.status_code == 422
+    assert client.get("/spec", params={"path": path}).json()["revision_number"] == "06"
+
+
+def test_commit_rejects_a_path_outside_the_vault(client, tmp_path):
+    path = str(tmp_path / "spec1.docx")
+    build_sample_spec_docx(path)
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/commit",
+        json={"edits": [_bom_edit("/tmp/elsewhere.docx")], "who": "Isaac", "revision_text": "Nope."},
+    )
+    assert r.status_code == 400
+
+
+def test_commit_across_specs_logs_one_audit_entry_each(client, tmp_path):
+    a = str(tmp_path / "a.docx")
+    b = str(tmp_path / "b.docx")
+    build_sample_spec_docx(a, spec_number="SW0001", revision="01")
+    build_sample_spec_docx(b, spec_number="SW0002", revision="09")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/commit",
+        json={
+            "edits": [_bom_edit(a, "Acme"), _bom_edit(b, "Acme")],
+            "who": "Isaac",
+            "revision_text": "Standardised supplier.",
+        },
+    )
+    assert r.status_code == 200
+    assert {c["revision_number"] for c in r.json()["committed"]} == {"02", "10"}
+
+    entries = client.get("/audit-log").json()["entries"]
+    commits = [e for e in entries if e["action"] == "commit_revision"]
+    assert len(commits) == 2
+    assert {e["spec_number"] for e in commits} == {"SW0001", "SW0002"}
+    assert all(e["revision_text"] == "Standardised supplier." for e in commits)
+    # the before-value is captured, so the log says what changed *from*
+    assert all(c["old_value"] is not None for e in commits for c in e["edits"])

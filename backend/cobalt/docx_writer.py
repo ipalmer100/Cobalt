@@ -17,7 +17,7 @@ import io
 import os
 import re
 import threading
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import date as date_cls
 from pathlib import Path
 
@@ -164,6 +164,52 @@ def _next_revision_number(previous: str) -> str:
     return incremented
 
 
+def _last_row_if_blank(table: Table):  # noqa: ANN201
+    """The final row, if every cell in it is empty; otherwise None."""
+    if len(table.rows) < 2:
+        return None
+    last = table.rows[-1]
+    return last if all(not cell.text.strip() for cell in last.cells) else None
+
+
+def _revision_base(rev_table: Table, pd_table: Table | None) -> str:
+    """The revision number to increment from.
+
+    Taking the last Revision History row blindly is wrong on real specs:
+    HK0070's table ends in an entirely blank row, and reading that as the
+    previous revision restarted a spec sitting at revision 4 back at 01 --
+    destroying the sequence the revision history exists to establish.
+
+    So: the last row that actually carries a number, cross-checked against
+    the Revision # the spec states in Product Description. The higher of the
+    two wins, because either one being ahead means the other was missed at
+    some point, and continuing from the lower would reuse a number that has
+    already been issued.
+    """
+    from_history = ""
+    for row in reversed(rev_table.rows[1:]):
+        candidate = row.cells[0].text.strip() if row.cells else ""
+        if _TRAILING_DIGITS.search(candidate):
+            from_history = candidate
+            break
+
+    from_pd = ""
+    if pd_table is not None:
+        for row in pd_table.rows:
+            cells = row.cells
+            for i, cell in enumerate(cells):
+                text = cell.text.strip()
+                if text.rstrip(":").strip().lower() == "revision #" and i + 1 < len(cells):
+                    from_pd = cells[i + 1].text.strip()
+                    break
+
+    def numeric(value: str) -> int:
+        match = _TRAILING_DIGITS.search(value)
+        return int(match.group(1)) if match else -1
+
+    return from_history if numeric(from_history) >= numeric(from_pd) else from_pd
+
+
 def _resolve_table(doc: Document, section: str, table_index: int | None = None) -> Table:
     """Locate a section's table in an already-open Document, the same way
     the parser does, so writes target exactly what the reader last showed.
@@ -281,6 +327,127 @@ def clear_records(path: str, section: str, table_index: int | None = None) -> No
         _save_atomically(doc, path)
 
 
+def _apply_revision_to_open_doc(
+    doc,  # noqa: ANN001
+    who: str,
+    revision_text: str,
+    revision_date: date_cls | None = None,
+) -> str:
+    """Append a Revision History row and bump Product Description's
+    Revision # on an already-open document, returning the new number.
+
+    Split out from apply_revision so a batch of cell edits and the revision
+    that describes them can be applied to the same open document and saved
+    once -- the two must land together or not at all.
+    """
+    body_tables, _ = find_body_section_tables(doc)
+    rev_tables = body_tables.get("Revision History")
+    if not rev_tables:
+        raise ValueError("Revision History section not found")
+
+    rev_table = doc.tables[rev_tables[0].table_index]
+    pd_parsed: ParsedTable = extract_product_description(doc)
+    pd_table = None
+    if pd_parsed.location != "missing":
+        pd_table = doc.sections[0].header.tables[0] if pd_parsed.location == "header" else doc.tables[pd_parsed.table_index]
+
+    new_rev = _next_revision_number(_revision_base(rev_table, pd_table))
+    rev_date = (revision_date or date_cls.today()).strftime("%m/%d/%Y")
+
+    # Real specs often carry a trailing blank row -- somebody pressed Tab
+    # once too often. Appending after it would leave a gap in the middle of
+    # the audit trail, so fill it instead.
+    trailing_blank = _last_row_if_blank(rev_table)
+    if trailing_blank is not None:
+        for i, value in enumerate([new_rev, who, rev_date, revision_text]):
+            if i < len(trailing_blank.cells):
+                set_cell_text(trailing_blank.cells[i], value)
+    else:
+        add_record_row(rev_table, [new_rev, who, rev_date, revision_text])
+
+    if pd_table is not None:
+        write_field(pd_table, "Revision #", new_rev)
+    return new_rev
+
+
+def _apply_one_edit(doc, edit: dict, table_cache: dict) -> None:  # noqa: ANN001
+    section = edit["section"]
+    table_index = edit.get("table_index")
+    cache_key = (section, table_index)
+    table = table_cache.get(cache_key)
+    if table is None:
+        table = _resolve_table(doc, section, table_index)
+        table_cache[cache_key] = table
+    if edit["kind"] == "record":
+        write_record_cell(table, edit["row"], edit["col"], edit["value"])
+    elif not write_field(table, edit["label"], edit["value"]):
+        raise ValueError(f'No "{edit["label"]}" field in {section}')
+
+
+def commit_with_revision(
+    edits_by_path: dict[str, list[dict]],
+    who: str,
+    revision_text: str,
+    revision_date: date_cls | None = None,
+) -> dict[str, str]:
+    """Apply a batch of edits and the revision describing them, or nothing.
+
+    Revisions are manual but regulatorily required, so a spec must never
+    end up holding edited values without the Revision History row that
+    accounts for them. That makes the unit of work "these cell edits plus
+    this revision statement", not one cell.
+
+    Staged in two phases so an interruption can't leave a half-applied
+    batch. Phase one opens each spec, applies its edits, appends the
+    revision, and writes the result to a temp file beside it -- the real
+    documents are untouched throughout, so a crash, a killed process or a
+    failure on the last spec of twelve leaves every one of them exactly as
+    it was. Phase two renames the temp files over the originals; each
+    rename is atomic, and they are only reached once every spec in the
+    batch has been successfully prepared.
+
+    A batch spanning several specs can't be made atomic *across* files --
+    there is no multi-file rename -- but phase two is metadata-only, so the
+    window where some are flipped and some aren't is milliseconds rather
+    than the seconds a parse-and-serialize pass takes. Returns the new
+    revision number per path.
+    """
+    if not edits_by_path:
+        return {}
+
+    # Sorted so two overlapping batches always take the locks in the same
+    # order and can't deadlock against each other.
+    paths = sorted(edits_by_path)
+    staged: list[tuple[Path, Path]] = []  # (temp, target)
+    new_revisions: dict[str, str] = {}
+
+    with ExitStack() as stack:
+        for path in paths:
+            stack.enter_context(_exclusive(path))
+
+        try:
+            for path in paths:
+                doc = Document(path)
+                table_cache: dict = {}
+                for edit in edits_by_path[path]:
+                    _apply_one_edit(doc, edit, table_cache)
+                new_revisions[path] = _apply_revision_to_open_doc(doc, who, revision_text, revision_date)
+
+                target = Path(path)
+                temp = target.with_name(f".{target.name}.cobalt-tmp")
+                doc.save(str(temp))
+                staged.append((temp, target))
+        except BaseException:
+            for temp, _ in staged:
+                temp.unlink(missing_ok=True)
+            raise
+
+        for temp, target in staged:
+            os.replace(temp, target)
+
+    return new_revisions
+
+
 def apply_revision(path: str, who: str, revision_text: str, revision_date: date_cls | None = None) -> str:
     """Append a Revision History row and bump the Revision # in Product
     Description. Returns the new revision number. Generalizes
@@ -291,23 +458,6 @@ def apply_revision(path: str, who: str, revision_text: str, revision_date: date_
     # lost -- taking the Revision # / Revision History pairing with it.
     with _exclusive(path):
         doc = Document(path)
-        body_tables, _ = find_body_section_tables(doc)
-        rev_tables = body_tables.get("Revision History")
-        if not rev_tables:
-            raise ValueError("Revision History section not found")
-
-        rev_table = doc.tables[rev_tables[0].table_index]
-        last_row_values = [c.text.strip() for c in rev_table.rows[-1].cells]
-        previous_rev = last_row_values[0] if last_row_values else ""
-        new_rev = _next_revision_number(previous_rev)
-        rev_date = (revision_date or date_cls.today()).strftime("%m/%d/%Y")
-
-        add_record_row(rev_table, [new_rev, who, rev_date, revision_text])
-
-        pd_parsed: ParsedTable = extract_product_description(doc)
-        if pd_parsed.location != "missing":
-            source = doc.sections[0].header.tables[0] if pd_parsed.location == "header" else doc.tables[pd_parsed.table_index]
-            write_field(source, "Revision #", new_rev)
-
+        new_rev = _apply_revision_to_open_doc(doc, who, revision_text, revision_date)
         _save_atomically(doc, path)
         return new_rev

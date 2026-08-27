@@ -1254,3 +1254,127 @@ td.save-failed::after {
   font-size: 14px;
   font-weight: 500;
 }
+
+/* --- Edit as a unit: buffered changes, then one revision --- */
+
+/* Read-only until Edit is pressed, so the controls that switch between
+   those states need to be the most prominent thing on the header row. */
+.spec-edit-controls,
+.grid-edit-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spec-edit-controls {
+  margin-left: auto;
+}
+
+.grid-edit-bar {
+  padding-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.spec-edit-controls button,
+.grid-edit-bar button {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.spec-edit-controls button.primary,
+.grid-edit-bar button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+  font-weight: 500;
+}
+
+.spec-edit-controls button:disabled,
+.grid-edit-bar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.spec-dirty-count,
+.grid-dirty-count {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.grid-edit-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* A cell holding an unsaved change. Marked because nothing is written yet:
+   the only record of what is pending is what's on screen. */
+td.cell-dirty,
+.spec-detail td.cell-dirty {
+  background: rgba(47, 58, 224, 0.09);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+textarea.detail-editor.dirty {
+  border-color: var(--accent);
+  background: rgba(47, 58, 224, 0.06);
+}
+
+/* Read-only cells in Spec Detail: plain text, not an empty-looking input. */
+.spec-detail td.detail-readonly-cell {
+  white-space: pre-line;
+}
+
+.revision-prompt {
+  max-width: 520px;
+}
+
+.revision-prompt-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0 0 14px;
+}
+
+.revision-prompt-field {
+  display: block;
+  margin-bottom: 12px;
+}
+
+.revision-prompt-field > span {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.revision-prompt-field input,
+.revision-prompt-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.revision-prompt-field textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
+.revision-prompt-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 0 0 12px;
+}
