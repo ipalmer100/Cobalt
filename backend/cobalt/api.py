@@ -50,7 +50,7 @@ async def _lifespan(_: FastAPI):
         vault.close()
 
 
-app = FastAPI(title="SpecWrite", lifespan=_lifespan)
+app = FastAPI(title="Cobalt", lifespan=_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

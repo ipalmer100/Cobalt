@@ -7,10 +7,10 @@ behaviours that would otherwise only surface against a live tenant.
 
 import pytest
 
-from specwrite.docx_sections import parse_bytes
-from specwrite.docx_writer import _resolve_table, apply_to_bytes, write_record_cell
-from specwrite.graph_store import GraphClient, GraphStore, StaticToken, resolve_drive_from_site
-from specwrite.storage import ConflictError, StoreError
+from cobalt.docx_sections import parse_bytes
+from cobalt.docx_writer import _resolve_table, apply_to_bytes, write_record_cell
+from cobalt.graph_store import GraphClient, GraphStore, StaticToken, resolve_drive_from_site
+from cobalt.storage import ConflictError, StoreError
 
 from .fakes.fake_graph import FakeGraph, upload_session_opener
 from .fixtures.builder import build_sample_spec_docx

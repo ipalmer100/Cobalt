@@ -7,7 +7,7 @@ the auto-conversion moment cannot happen again. Run this between run-throughs
 and on the morning of the pitch.
 
 It works on a *copy*: point ``--source`` at a pristine folder of specs you
-keep untouched, and ``--demo`` at the folder you actually open in SpecWrite.
+keep untouched, and ``--demo`` at the folder you actually open in Cobalt.
 The source is only ever read.
 
     python reset_demo.py --source "C:\\Demo\\master" --demo "C:\\Demo\\live"
@@ -23,7 +23,7 @@ import sys
 from pathlib import Path
 
 SPEC_SUFFIXES = (".docx", ".doc")
-STATE_DIRNAME = ".specwrite"
+STATE_DIRNAME = ".cobalt"
 
 
 def _specs_under(root: Path) -> list[Path]:
@@ -38,7 +38,7 @@ def _specs_under(root: Path) -> list[Path]:
 
 
 def _converted_siblings(specs: list[Path]) -> list[Path]:
-    """The .docx files SpecWrite generated from a .doc.
+    """The .docx files Cobalt generated from a .doc.
 
     These have to go, or the conversion never happens again: the app treats
     "a .docx sibling already exists" as the record of "already converted".
@@ -100,17 +100,17 @@ def reset(source: Path, demo: Path, dry_run: bool = False) -> int:
         print(f"  {doc_count} legacy .doc file(s) ready to auto-convert on open.")
     print("  Audit log and exception-queue decisions cleared.")
     print()
-    print(f"Open this folder in SpecWrite:  {demo}")
+    print(f"Open this folder in Cobalt:  {demo}")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Restore a SpecWrite demo folder to a known state.",
+        description="Restore a Cobalt demo folder to a known state.",
         epilog="The source folder is only ever read from; the demo folder is replaced.",
     )
     parser.add_argument("--source", required=True, help="pristine folder of specs (read-only)")
-    parser.add_argument("--demo", required=True, help="folder you open in SpecWrite (replaced)")
+    parser.add_argument("--demo", required=True, help="folder you open in Cobalt (replaced)")
     parser.add_argument("--list", action="store_true", dest="dry_run",
                         help="show what would change, without changing it")
     args = parser.parse_args()

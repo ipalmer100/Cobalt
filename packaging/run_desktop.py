@@ -1,10 +1,10 @@
-"""PyInstaller's entry script -- kept separate from specwrite/desktop.py
+"""PyInstaller's entry script -- kept separate from cobalt/desktop.py
 so the frozen build has a plain top-level script to point at, rather than
 relying on `python -m` module invocation inside a frozen exe."""
 
 import multiprocessing
 
-from specwrite.desktop import main
+from cobalt.desktop import main
 
 if __name__ == "__main__":
     # Required before anything else runs in a frozen (PyInstaller) exe that

@@ -1,5 +1,5 @@
-from specwrite.vault import Vault
-from specwrite.views import build_view
+from cobalt.vault import Vault
+from cobalt.views import build_view
 
 from .fixtures.builder import build_sample_spec_docx
 

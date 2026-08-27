@@ -1,4 +1,4 @@
-# SpecWrite
+# Cobalt
 
 "Obsidian for specs" — point it at a folder of flexible-packaging customer
 spec `.docx` files and get a live, instantly-synced view of all of them,
@@ -7,47 +7,47 @@ Information, etc.) instead of opening one Word document at a time.
 
 ## How it works
 
-- **`backend/specwrite/docx_sections.py`** — reads a spec: finds each of
+- **`backend/cobalt/docx_sections.py`** — reads a spec: finds each of
   the 11 sections by locating its title paragraph and taking the table
   that follows it (Product Description is the exception — it lives in
   the page header, with a fallback to the first body table for older
   specs that never got one).
-- **`backend/specwrite/docx_writer.py`** — writes a spec by cell address
+- **`backend/cobalt/docx_writer.py`** — writes a spec by cell address
   (row/col or label), preserving the target cell's existing formatting,
   and a composite `apply_revision()` that bumps the header's Revision #
   and appends a Revision History row in one call. This is the *only* path
   that's allowed to touch either of those — see "Revision History" below.
-- **`backend/specwrite/vault.py`** — indexes a folder of specs and
+- **`backend/cobalt/vault.py`** — indexes a folder of specs and
   watches it for changes (`watchdog`), the same "select a folder, it's
   instantly live" model as Obsidian's vault.
-- **`backend/specwrite/views.py`** — flattens every spec's copy of a
+- **`backend/cobalt/views.py`** — flattens every spec's copy of a
   section into `Spec Number | Customer | <columns> | File Path` rows —
   the shape of the sample Bill of Materials workbook, generalized to all
   11 sections. Bill of Materials specifically unions Primary + Secondary
   Approved Materials into one grid with a Material Type column, matching
   the existing VBA extractor's output.
-- **`backend/specwrite/api.py`** — FastAPI HTTP + WebSocket layer over
+- **`backend/cobalt/api.py`** — FastAPI HTTP + WebSocket layer over
   the above. One vault open at a time; the WebSocket pushes a "changed"
   event on every write (ours or an external Word edit) so open views
   refresh immediately. (Needs `uvicorn[standard]` — plain `uvicorn` has no
   WebSocket implementation and silently 404s `/ws`; see pyproject.toml.)
-- **`backend/specwrite/doc_conversion.py`** — converts legacy `.doc`
+- **`backend/cobalt/doc_conversion.py`** — converts legacy `.doc`
   files to `.docx` via LibreOffice headless (`soffice --headless
   --convert-to docx`). The original `.doc` is never touched/deleted.
   `vault.py` calls this automatically and silently the first time it sees
   a `.doc` without a same-named `.docx` next to it — see "Legacy `.doc`
   handling" below; there's no manual "convert" action anywhere in the UI.
-- **`backend/specwrite/creation.py`** — creates a new spec, either by
+- **`backend/cobalt/creation.py`** — creates a new spec, either by
   duplicating an existing one (data tables carry over as a starting
   point; Spec #, Customer, and Revision History reset) or from the
-  bundled blank template (`specwrite/templates/blank_spec_template.docx`
+  bundled blank template (`cobalt/templates/blank_spec_template.docx`
   — a synthetic placeholder with no real branding; swap in a real blank
   Toppan master template by regenerating via
   `scripts/build_blank_template.py` or replacing the file directly).
-- **`backend/specwrite/audit_log.py`** — a second, independent change log,
+- **`backend/cobalt/audit_log.py`** — a second, independent change log,
   entirely separate from Revision History. Every write the app makes
   (mass-edit cell/field, row add, revision, conversion, new spec) is
-  appended as one JSON line to `<vault_root>/.specwrite/audit_log.jsonl`
+  appended as one JSON line to `<vault_root>/.cobalt/audit_log.jsonl`
   — never into a `.docx`. Lives inside the vault (Obsidian's `.obsidian/`
   convention) so it travels with the folder and is shared by anyone who
   opens it. `GET /audit-log` reads it back; the frontend's "Audit Log"
@@ -132,7 +132,7 @@ Two things worth knowing before rolling this out on synced storage:
 - With OneDrive **Files On-Demand**, cloud-only files are downloaded when
   first read, so the first index of a large library will hydrate it.
   Marking the library "Always keep on this device" avoids a surprise.
-- `.specwrite/` (the audit log and the exception queue's decisions) lives
+- `.cobalt/` (the audit log and the exception queue's decisions) lives
   in the vault, which is the point — it's shared with everyone who opens
   the folder. On synced storage that also means two people deciding at
   the same moment can produce sync conflict copies of those files. There
@@ -168,7 +168,7 @@ varies is which of a document's tables feed each one.
   filed under Process Routing corrupts what everyone reads off the grid,
   invisibly.
 - Decisions are keyed by heading text and saved in the vault
-  (`.specwrite/section_mappings.json`), so allocating `Quality Issues`
+  (`.cobalt/section_mappings.json`), so allocating `Quality Issues`
   once covers every spec in the archive that uses that heading, for
   everyone who opens the folder, and survives reopening. They're
   reversible (Undo returns the heading to the queue) and logged to the
@@ -203,9 +203,9 @@ Both come back as a 422 with a message pointing at `POST
 /spec/revision`, and the Mass Edit grid greys out accordingly (the
 dropdown even tags it "Revision History (read-only)"). The only code
 path that can ever change either value is `apply_revision()`, which
-changes them together, atomically — see `specwrite/views.py`
+changes them together, atomically — see `cobalt/views.py`
 (`is_view_editable`, `readonly_columns_for`) and the guard in
-`specwrite/api.py` (`_require_not_revision_locked`).
+`cobalt/api.py` (`_require_not_revision_locked`).
 
 ## Running it
 
@@ -216,14 +216,14 @@ frontend itself, so there's no second terminal and no dev server:
 
 ```
 cd frontend && npm install && npm run build && cd ..
-cd backend && pip install -e . && python -m specwrite.desktop
+cd backend && pip install -e . && python -m cobalt.desktop
 ```
 
 It prints the port, opens your browser, and tells you whether `.doc`
 conversion is available:
 
 ```
-Starting SpecWrite...
+Starting Cobalt...
 Opening http://127.0.0.1:8765/ in your browser.
 .doc conversion: available (/usr/bin/soffice)
 ```
@@ -238,13 +238,13 @@ server.
 
 ### Two-terminal dev setup
 
-For working *on* SpecWrite, run the API and Vite separately so both
+For working *on* Cobalt, run the API and Vite separately so both
 hot-reload:
 
 ```
 cd backend
 pip install -e .
-python -m uvicorn specwrite.api:app --reload
+python -m uvicorn cobalt.api:app --reload
 ```
 
 ```
@@ -350,7 +350,7 @@ fixed (see above and the git history for `vault.py`, `audit_log.py`,
 2. The first Mass Edit view request after opening a large vault paid a
    one-time GC scan of the whole persistent object graph (~3x slower
    than every request after it) — fixed via `gc.freeze()`.
-3. The audit log (`.specwrite/audit_log.jsonl`) read and JSON-parsed its
+3. The audit log (`.cobalt/audit_log.jsonl`) read and JSON-parsed its
    *entire* contents on every request regardless of how many entries were
    actually requested — harmless on a fresh vault, but a heavily-used
    15,000-file vault's log can realistically grow to hundreds of MB over
@@ -466,7 +466,7 @@ mechanical by comparison now that the layer beneath it exists. Two other
 things that need decisions before a hosted deployment: `.doc` conversion
 shells out to LibreOffice on a real path, so under Graph it becomes
 download → convert on the server → upload; and the audit log and
-exception-queue decisions currently live in `.specwrite/` inside the
+exception-queue decisions currently live in `.cobalt/` inside the
 folder, which for a multi-user server should become a database (SQLite
 behind an interface is enough to start, and upgrades to Postgres or Azure
 SQL by connection string).

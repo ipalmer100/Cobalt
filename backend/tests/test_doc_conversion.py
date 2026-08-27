@@ -5,8 +5,8 @@ from pathlib import Path
 import docx
 import pytest
 
-from specwrite.doc_conversion import ConversionError, convert_doc_to_docx, soffice_available, soffice_path
-from specwrite.docx_sections import parse_document
+from cobalt.doc_conversion import ConversionError, convert_doc_to_docx, soffice_available, soffice_path
+from cobalt.docx_sections import parse_document
 
 from .fixtures.builder import build_sample_spec_docx
 
@@ -98,7 +98,7 @@ def test_convert_missing_source_raises(tmp_path):
 
 
 def test_convert_raises_if_soffice_missing(tmp_path, monkeypatch):
-    import specwrite.doc_conversion as mod
+    import cobalt.doc_conversion as mod
 
     monkeypatch.setattr(mod, "soffice_path", lambda: None)
     doc_path = tmp_path / "stub.doc"
@@ -112,7 +112,7 @@ def test_soffice_path_prefers_bundled_copy_when_frozen(tmp_path, monkeypatch):
     """The packaged desktop app can bundle a full LibreOffice install under
     <app>/libreoffice/program/ -- when frozen, that must win over whatever
     (possibly different, possibly absent) soffice happens to be on PATH."""
-    import specwrite.doc_conversion as mod
+    import cobalt.doc_conversion as mod
 
     bundled_dir = tmp_path / "libreoffice" / "program"
     bundled_dir.mkdir(parents=True)
@@ -126,7 +126,7 @@ def test_soffice_path_prefers_bundled_copy_when_frozen(tmp_path, monkeypatch):
 
 
 def test_soffice_path_falls_back_to_path_when_frozen_without_bundle(tmp_path, monkeypatch):
-    import specwrite.doc_conversion as mod
+    import cobalt.doc_conversion as mod
 
     monkeypatch.setattr(mod.sys, "_MEIPASS", str(tmp_path / "empty"), raising=False)
     monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/soffice")
@@ -137,7 +137,7 @@ def test_soffice_path_falls_back_to_path_when_frozen_without_bundle(tmp_path, mo
 def test_convert_raises_if_soffice_produces_no_output(tmp_path, monkeypatch):
     """Guards against soffice reporting success (exit 0) but silently not
     writing anything — exactly the failure mode this sandbox hit."""
-    import specwrite.doc_conversion as mod
+    import cobalt.doc_conversion as mod
 
     doc_path = tmp_path / "stub.doc"
     doc_path.write_bytes(b"not a real doc file")

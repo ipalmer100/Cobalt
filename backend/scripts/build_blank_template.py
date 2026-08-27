@@ -1,4 +1,4 @@
-"""Generates specwrite/templates/blank_spec_template.docx — the structural
+"""Generates cobalt/templates/blank_spec_template.docx — the structural
 placeholder used by create_blank_spec() for "New Spec -> from template".
 
 This is a *synthetic* placeholder: correct section structure, headings, and
@@ -23,7 +23,7 @@ from docx import Document
 from docx.shared import Inches, RGBColor
 
 RED = RGBColor(0xFF, 0x00, 0x00)
-OUTPUT_PATH = Path(__file__).resolve().parent.parent / "specwrite" / "templates" / "blank_spec_template.docx"
+OUTPUT_PATH = Path(__file__).resolve().parent.parent / "cobalt" / "templates" / "blank_spec_template.docx"
 
 
 def _heading(doc: Document, text: str) -> None:

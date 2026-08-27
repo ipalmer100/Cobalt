@@ -2,10 +2,10 @@ import threading
 import time
 from pathlib import Path
 
-import specwrite.vault as vault_mod
-from specwrite.doc_conversion import ConversionError
-from specwrite.docx_writer import apply_revision
-from specwrite.vault import Vault
+import cobalt.vault as vault_mod
+from cobalt.doc_conversion import ConversionError
+from cobalt.docx_writer import apply_revision
+from cobalt.vault import Vault
 
 from .fixtures.builder import build_sample_spec_docx
 

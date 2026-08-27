@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from specwrite.api import _state, app
+from cobalt.api import _state, app
 
 from .fixtures.builder import build_sample_spec_docx
 
@@ -304,7 +304,7 @@ def test_audit_log_write_does_not_touch_docx_and_is_excluded_from_vault(client, 
         json={"path": path, "section": "Bill of Materials", "row": 1, "col": 2, "value": "X", "who": "Isaac"},
     )
 
-    assert (tmp_path / ".specwrite" / "audit_log.jsonl").exists()
+    assert (tmp_path / ".cobalt" / "audit_log.jsonl").exists()
 
     # the log file must never show up as a vault entry alongside the real spec
     r = client.get("/vault")

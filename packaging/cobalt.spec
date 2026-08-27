@@ -1,4 +1,4 @@
-# PyInstaller spec for the SpecWrite desktop app.
+# PyInstaller spec for the Cobalt desktop app.
 #
 # Bundles the Python backend (FastAPI/uvicorn) together with the frontend's
 # production build so the result is the whole app: no separate Python or
@@ -11,10 +11,10 @@
 # hundred MB, and onedir starts instantly since nothing needs extracting
 # to a temp dir on every launch, unlike onefile. The folder itself -- copy
 # or zip the whole thing -- *is* the "one app" a user runs; they still
-# only ever double-click SpecWrite.exe inside it.
+# only ever double-click Cobalt.exe inside it.
 #
 # Build from the repo root with:
-#   pyinstaller packaging/specwrite.spec
+#   pyinstaller packaging/cobalt.spec
 # (see packaging/build_windows_exe.bat for the one-command wrapper, and
 # packaging/README.md for full prerequisites)
 
@@ -26,7 +26,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 repo_root = Path(SPECPATH).parent  # noqa: F821 (SPECPATH is injected by PyInstaller)
 backend_dir = repo_root / "backend"
 frontend_dist = repo_root / "frontend" / "dist"
-template_file = backend_dir / "specwrite" / "templates" / "blank_spec_template.docx"
+template_file = backend_dir / "cobalt" / "templates" / "blank_spec_template.docx"
 
 if not frontend_dist.is_dir():
     raise SystemExit(
@@ -50,7 +50,7 @@ hiddenimports = (
 
 datas = [
     (str(frontend_dist), "frontend_dist"),
-    (str(template_file), "specwrite/templates"),
+    (str(template_file), "cobalt/templates"),
 ] + collect_data_files("docx")  # python-docx ships its own default.docx template
 
 # Optional: bundle a full LibreOffice install so .doc conversion works with
@@ -63,12 +63,12 @@ datas = [
 # with no error, if the env var isn't set: .doc conversion then falls back
 # to whatever `soffice` it finds on PATH at runtime, exactly as before this
 # bundling existed.
-libreoffice_dir = os.environ.get("SPECWRITE_LIBREOFFICE_DIR")
+libreoffice_dir = os.environ.get("COBALT_LIBREOFFICE_DIR")
 if libreoffice_dir:
     lo_path = Path(libreoffice_dir)
     if not (lo_path / "program" / "soffice.exe").is_file():
         raise SystemExit(
-            f"SPECWRITE_LIBREOFFICE_DIR={libreoffice_dir} doesn't look like a "
+            f"COBALT_LIBREOFFICE_DIR={libreoffice_dir} doesn't look like a "
             "LibreOffice install (no program\\soffice.exe under it)."
         )
     datas.append((str(lo_path), "libreoffice"))
@@ -92,12 +92,17 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="SpecWrite",
+    name="Cobalt",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=True,
+    # The Cobalt mark, so the taskbar button and the Explorer entry show it
+    # rather than PyInstaller's default. Regenerate from the SVG with
+    # `python packaging/make_icon.py` if the mark changes; ignored on
+    # non-Windows builds, so it's safe to leave set unconditionally.
+    icon=str(Path(SPECPATH) / "cobalt.ico"),  # noqa: F821
 )
 
 coll = COLLECT(
@@ -106,5 +111,5 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="SpecWrite",
+    name="Cobalt",
 )

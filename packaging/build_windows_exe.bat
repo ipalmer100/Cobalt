@@ -4,7 +4,7 @@ setlocal
 cd /d "%~dp0.."
 
 echo ============================================================
-echo  SpecWrite - Windows build
+echo  Cobalt - Windows build
 echo ============================================================
 echo.
 echo === Checking prerequisites ===
@@ -60,20 +60,20 @@ popd
 
 echo.
 echo === Checking for a LibreOffice install to bundle - optional ===
-set "SPECWRITE_LIBREOFFICE_DIR="
-if exist "%ProgramFiles%\LibreOffice\program\soffice.exe" set "SPECWRITE_LIBREOFFICE_DIR=%ProgramFiles%\LibreOffice"
-if not defined SPECWRITE_LIBREOFFICE_DIR if exist "%ProgramFiles(x86)%\LibreOffice\program\soffice.exe" set "SPECWRITE_LIBREOFFICE_DIR=%ProgramFiles(x86)%\LibreOffice"
+set "COBALT_LIBREOFFICE_DIR="
+if exist "%ProgramFiles%\LibreOffice\program\soffice.exe" set "COBALT_LIBREOFFICE_DIR=%ProgramFiles%\LibreOffice"
+if not defined COBALT_LIBREOFFICE_DIR if exist "%ProgramFiles(x86)%\LibreOffice\program\soffice.exe" set "COBALT_LIBREOFFICE_DIR=%ProgramFiles(x86)%\LibreOffice"
 
-if defined SPECWRITE_LIBREOFFICE_DIR goto :have_libreoffice
+if defined COBALT_LIBREOFFICE_DIR goto :have_libreoffice
 echo   LibreOffice not found on this build machine - building without it.
 echo   .docx specs work normally either way. Legacy .doc files will only
 echo   convert if LibreOffice is installed on whichever machine runs
-echo   SpecWrite. To bundle it instead, install LibreOffice here and
+echo   Cobalt. To bundle it instead, install LibreOffice here and
 echo   re-run this script.
 goto :python_env
 
 :have_libreoffice
-echo   Found LibreOffice at "%SPECWRITE_LIBREOFFICE_DIR%"
+echo   Found LibreOffice at "%COBALT_LIBREOFFICE_DIR%"
 echo   It will be bundled, so .doc conversion works on the target machine
 echo   with nothing else installed. This adds several hundred MB.
 
@@ -91,16 +91,16 @@ python -m pip install -e "backend[build]"
 if errorlevel 1 goto :error_deps
 
 echo.
-echo === Building SpecWrite.exe - this can take a few minutes ===
-pyinstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\specwrite.spec
+echo === Building Cobalt.exe - this can take a few minutes ===
+pyinstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\cobalt.spec
 if errorlevel 1 goto :error_pyinstaller
 
 echo.
 echo ============================================================
-echo  Done. The app is at: packaging\dist\SpecWrite\
+echo  Done. The app is at: packaging\dist\Cobalt\
 echo.
-echo  Double-click SpecWrite.exe inside that folder to run it.
-echo  To share it, zip the whole SpecWrite folder - not just the exe -
+echo  Double-click Cobalt.exe inside that folder to run it.
+echo  To share it, zip the whole Cobalt folder - not just the exe -
 echo  and have the recipient unzip it before running.
 echo ============================================================
 goto :end
@@ -162,7 +162,7 @@ echo.
 echo PyInstaller failed to build the app.
 echo.
 echo If this mentions a missing module, note the name and report it -
-echo it likely needs adding to hiddenimports in packaging\specwrite.spec.
+echo it likely needs adding to hiddenimports in packaging\cobalt.spec.
 echo.
 exit /b 1
 

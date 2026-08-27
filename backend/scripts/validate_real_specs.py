@@ -16,9 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from specwrite.docx_sections import ALL_SECTIONS, parse_document
-from specwrite.docx_writer import apply_revision
-from specwrite.models import TableShape
+from cobalt.docx_sections import ALL_SECTIONS, parse_document
+from cobalt.docx_writer import apply_revision
+from cobalt.models import TableShape
 
 
 def validate(path: str) -> None:

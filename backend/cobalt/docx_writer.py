@@ -65,7 +65,7 @@ def _save_atomically(doc, path: str) -> None:  # noqa: ANN001
     version or wholly the new one.
     """
     target = Path(path)
-    temp = target.with_name(f".{target.name}.specwrite-tmp")
+    temp = target.with_name(f".{target.name}.cobalt-tmp")
     try:
         doc.save(str(temp))
         os.replace(temp, target)

@@ -23,8 +23,28 @@ import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-MAPPINGS_DIRNAME = ".specwrite"
+MAPPINGS_DIRNAME = ".cobalt"
 MAPPINGS_FILENAME = "section_mappings.json"
+
+# The app was called SpecWrite before it was called Cobalt, and its state
+# lives beside the specs, in the customer's own folder. A vault that has
+# already been triaged holds real decisions a person made table by table;
+# renaming the folder we look in would silently throw all of them away and
+# re-raise every exception. So a legacy directory is adopted where one
+# exists, and only new vaults get the new name.
+LEGACY_DIRNAME = ".specwrite"
+
+
+def state_dir(vault_root: str) -> str:
+    """The state folder to use for this vault: the current name, unless a
+    pre-rename one is already there."""
+    current = os.path.join(vault_root, MAPPINGS_DIRNAME)
+    if os.path.isdir(current):
+        return current
+    legacy = os.path.join(vault_root, LEGACY_DIRNAME)
+    if os.path.isdir(legacy):
+        return legacy
+    return current
 
 
 def _normalize(text: str) -> str:
@@ -32,7 +52,7 @@ def _normalize(text: str) -> str:
 
 
 def mappings_path(vault_root: str) -> str:
-    return os.path.join(vault_root, MAPPINGS_DIRNAME, MAPPINGS_FILENAME)
+    return os.path.join(state_dir(vault_root), MAPPINGS_FILENAME)
 
 
 @dataclass
@@ -98,7 +118,11 @@ def delete_mapping(vault_root: str, heading: str) -> bool:
 
 
 def _write(vault_root: str, mappings: dict[str, Mapping]) -> None:
-    directory = os.path.join(vault_root, MAPPINGS_DIRNAME)
+    # Resolved once, and the same folder the final path uses: creating the
+    # directory first and asking again would flip state_dir's answer from
+    # the adopted legacy folder to the newly created one, leaving the temp
+    # file and its target in different directories.
+    directory = state_dir(vault_root)
     os.makedirs(directory, exist_ok=True)
     payload = {"version": 1, "mappings": {k: m.to_dict() for k, m in mappings.items()}}
     handle = tempfile.NamedTemporaryFile(
@@ -109,7 +133,7 @@ def _write(vault_root: str, mappings: dict[str, Mapping]) -> None:
         handle.flush()
         os.fsync(handle.fileno())
         handle.close()
-        os.replace(handle.name, mappings_path(vault_root))
+        os.replace(handle.name, os.path.join(directory, MAPPINGS_FILENAME))
     except BaseException:
         handle.close()
         try:

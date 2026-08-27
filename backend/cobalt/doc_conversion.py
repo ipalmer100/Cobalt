@@ -28,7 +28,7 @@ class ConversionError(RuntimeError):
 
 def _bundled_soffice_path() -> Path | None:
     """The packaged desktop app can optionally bundle a full LibreOffice
-    install under `<app>/libreoffice/` (see packaging/specwrite.spec and
+    install under `<app>/libreoffice/` (see packaging/cobalt.spec and
     packaging/build_windows_exe.bat) so .doc conversion works with nothing
     else installed on the machine running the app. `sys._MEIPASS` is the
     right base dir for this in both PyInstaller layouts: the temp

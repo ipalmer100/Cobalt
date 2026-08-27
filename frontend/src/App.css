@@ -5,7 +5,7 @@
   --border: #e0e0e0;
   --text: #1a1a1a;
   --text-muted: #666;
-  --accent: #7c3aed;
+  --accent: #2f3ae0;
   --error: #c0392b;
 }
 
@@ -17,7 +17,7 @@
     --border: #333338;
     --text: #e8e8ea;
     --text-muted: #9a9aa2;
-    --accent: #a78bfa;
+    --accent: #7d88f7;
     --error: #e57373;
   }
 }
@@ -326,7 +326,7 @@ table.records-table th {
 }
 
 table.records-table.editable td.saving {
-  background: rgba(124, 58, 237, 0.15);
+  background: rgba(47, 58, 224, 0.15);
 }
 
 /* Only `textarea.cell-editor` -- every cell editor is a textarea now, and a
@@ -555,7 +555,7 @@ td.active-cell {
 }
 
 td.fill-preview {
-  background: rgba(124, 58, 237, 0.12);
+  background: rgba(47, 58, 224, 0.12);
   outline: 1px dashed var(--accent);
   outline-offset: -1px;
 }
@@ -1231,4 +1231,26 @@ td.save-failed::after {
 .folder-picker-home:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+/* The Cobalt mark on the opening screen. Sized generously -- this screen is
+   the first thing anyone sees in a demo, and it's otherwise a text form. */
+.app-mark {
+  width: 128px;
+  height: 128px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.open-vault-screen h1 {
+  margin: 0;
+  font-size: 34px;
+  letter-spacing: -0.02em;
+}
+
+.open-vault-tagline {
+  margin: 0 0 10px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
 }

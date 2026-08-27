@@ -3,10 +3,10 @@ exception queue that catches everything the classifier won't guess at."""
 
 from docx import Document
 
-from specwrite.docx_sections import IGNORE, classify_heading, parse_document
-from specwrite.section_mappings import load_mappings, save_mapping
-from specwrite.views import build_view
-from specwrite.vault import VaultEntry
+from cobalt.docx_sections import IGNORE, classify_heading, parse_document
+from cobalt.section_mappings import load_mappings, save_mapping
+from cobalt.views import build_view
+from cobalt.vault import VaultEntry
 
 
 def _doc_with(path: str, blocks: list[tuple[str, list[list[str]]]]):
@@ -225,7 +225,7 @@ def test_specs_spelling_a_column_differently_stay_separately_addressable(tmp_pat
 def test_edit_to_a_duplicate_named_column_sticks(tmp_path):
     """End to end: write through the column the grid would target, and read
     back the value the grid would display."""
-    from specwrite.docx_writer import write_cell
+    from cobalt.docx_writer import write_cell
 
     path = str(tmp_path / "dupe.docx")
     _doc_with(path, [("Physical Attributes & Testing", [

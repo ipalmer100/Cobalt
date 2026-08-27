@@ -1,7 +1,7 @@
 import pytest
 
-from specwrite.creation import CreationError, create_blank_spec, duplicate_spec
-from specwrite.docx_sections import parse_document
+from cobalt.creation import CreationError, create_blank_spec, duplicate_spec
+from cobalt.docx_sections import parse_document
 
 from .fixtures.builder import build_sample_spec_docx
 

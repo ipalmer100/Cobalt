@@ -164,7 +164,7 @@ class LocalStore:
             if not path.is_file():
                 continue
             relative = path.relative_to(self.root)
-            # Skip .specwrite/ and any other dotfolder, the same way Obsidian
+            # Skip .cobalt/ and any other dotfolder, the same way Obsidian
             # ignores its own config directory.
             if any(part.startswith(".") for part in relative.parts):
                 continue

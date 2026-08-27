@@ -12,18 +12,26 @@ import "./App.css";
 
 type Mode = "detail" | "mass-edit" | "audit-log" | "exceptions";
 
-const WHO_STORAGE_KEY = "specwrite.who";
+const WHO_STORAGE_KEY = "cobalt.who";
 // The vault folder is remembered so a daily user doesn't retype a long
 // SharePoint path on every launch. Deliberately prefilled rather than
 // auto-opened: indexing a large library takes real time, so opening it
 // stays an explicit click.
-const ROOT_STORAGE_KEY = "specwrite.lastRoot";
-const RECENT_ROOTS_KEY = "specwrite.recentRoots";
+const ROOT_STORAGE_KEY = "cobalt.lastRoot";
+const RECENT_ROOTS_KEY = "cobalt.recentRoots";
 const MAX_RECENT_ROOTS = 5;
+
+// The app was called SpecWrite before it was called Cobalt. Anyone who has
+// been using it already has their name and their vault path under the old
+// keys; reading those once means the rename doesn't greet a returning user
+// with an empty form.
+function remembered(key: string): string | null {
+  return localStorage.getItem(key) ?? localStorage.getItem(key.replace(/^cobalt\./, "specwrite."));
+}
 
 function loadRecentRoots(): string[] {
   try {
-    const raw = localStorage.getItem(RECENT_ROOTS_KEY);
+    const raw = remembered(RECENT_ROOTS_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed.filter((r) => typeof r === "string") : [];
   } catch {
@@ -33,7 +41,7 @@ function loadRecentRoots(): string[] {
 
 export default function App() {
   const [root, setRoot] = useState("");
-  const [rootInput, setRootInput] = useState(() => localStorage.getItem(ROOT_STORAGE_KEY) ?? "");
+  const [rootInput, setRootInput] = useState(() => remembered(ROOT_STORAGE_KEY) ?? "");
   const [recentRoots, setRecentRoots] = useState<string[]>(loadRecentRoots);
   const [showPicker, setShowPicker] = useState(false);
   const [entries, setEntries] = useState<VaultEntry[]>([]);
@@ -47,7 +55,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
   const [showNewSpec, setShowNewSpec] = useState(false);
-  const [who, setWho] = useState(() => localStorage.getItem(WHO_STORAGE_KEY) ?? "");
+  const [who, setWho] = useState(() => remembered(WHO_STORAGE_KEY) ?? "");
   const [pendingExceptions, setPendingExceptions] = useState(0);
 
   function updateWho(value: string) {
@@ -143,7 +151,9 @@ export default function App() {
   if (!root) {
     return (
       <div className="open-vault-screen">
-        <h1>SpecWrite</h1>
+        <img className="app-mark" src="/cobalt-icon.svg" alt="" width={128} height={128} />
+        <h1>Cobalt</h1>
+        <p className="open-vault-tagline">Every customer spec in one place, live.</p>
         <p>Point this at the folder containing your customer specs.</p>
         <p className="open-vault-sub">
           Subfolders are included, so one pick covers a whole library.

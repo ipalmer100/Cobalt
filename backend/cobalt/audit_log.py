@@ -7,7 +7,7 @@ cell, every field, every row, every revision, every conversion, every new
 spec) with no connection to the Word document at all — nothing here is
 ever written into a .docx.
 
-It lives inside the vault itself, at ``<vault_root>/.specwrite/audit_log.jsonl``,
+It lives inside the vault itself, at ``<vault_root>/.cobalt/audit_log.jsonl``,
 the same "dotfolder colocated with the vault" convention Obsidian uses for
 its own config — so the log travels with the folder (network share, backup,
 zip) and is shared automatically by anyone who opens that vault, without
@@ -25,14 +25,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_LOG_DIRNAME = ".specwrite"
+from .section_mappings import state_dir
+
 _LOG_FILENAME = "audit_log.jsonl"
 
 _write_lock = threading.Lock()
 
 
 def _log_path(vault_root: str) -> Path:
-    return Path(vault_root) / _LOG_DIRNAME / _LOG_FILENAME
+    # Shares the vault's state folder with the exception-queue decisions,
+    # which keeps reading a pre-rename ".specwrite" directory where one
+    # exists -- an audit trail that silently restarted at the rename would
+    # be worse than useless.
+    return Path(state_dir(vault_root)) / _LOG_FILENAME
 
 
 def append_entry(vault_root: str, action: str, who: str, **fields: Any) -> dict:

@@ -1,5 +1,5 @@
-from specwrite.docx_sections import ALL_SECTIONS, parse_document
-from specwrite.models import TableShape
+from cobalt.docx_sections import ALL_SECTIONS, parse_document
+from cobalt.models import TableShape
 
 from .fixtures.builder import build_sample_spec_docx
 

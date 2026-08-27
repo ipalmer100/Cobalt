@@ -2,8 +2,8 @@ import time
 
 from docx import Document
 
-from specwrite.docx_sections import parse_document
-from specwrite.docx_writer import apply_revision, write_cell, write_edits_batch, write_record_cell
+from cobalt.docx_sections import parse_document
+from cobalt.docx_writer import apply_revision, write_cell, write_edits_batch, write_record_cell
 
 from .fixtures.builder import build_sample_spec_docx
 
@@ -183,7 +183,7 @@ def test_a_failed_save_leaves_the_original_intact(tmp_path):
     can't leave a temp file behind for the vault indexer to trip over."""
     import zipfile
 
-    from specwrite.docx_writer import _save_atomically
+    from cobalt.docx_writer import _save_atomically
 
     path = str(tmp_path / "spec.docx")
     build_sample_spec_docx(path)
@@ -211,4 +211,4 @@ def test_a_failed_save_leaves_the_original_intact(tmp_path):
     assert open(path, "rb").read() == before
     assert zipfile.ZipFile(path).testzip() is None
     assert parse_document(path).primary("Bill of Materials").rows[1][2] == "Original Supplier"
-    assert list(tmp_path.glob(".*specwrite-tmp")) == []
+    assert list(tmp_path.glob(".*cobalt-tmp")) == []

@@ -1,4 +1,4 @@
-# Building the SpecWrite desktop app
+# Building the Cobalt desktop app
 
 Produces a folder that a non-technical user can double-click into to run
 the whole app — no Python, no Node.js, no terminal, and (if you choose to
@@ -7,8 +7,8 @@ it's the same FastAPI backend serving the same built frontend, bundled
 with [PyInstaller](https://pyinstaller.org/); the browser is just how it
 displays its UI, the same way many desktop apps embed a web view.
 
-The output is a **folder**, not a single `.exe` file — `SpecWrite.exe`
-plus its support files sit together in `packaging\dist\SpecWrite\`. This
+The output is a **folder**, not a single `.exe` file — `Cobalt.exe`
+plus its support files sit together in `packaging\dist\Cobalt\`. This
 is normal for apps this size (it's the same shape as a portable
 7-Zip/VS Code install): copy or zip the *whole folder*, and
 double-clicking the `.exe` inside it is still the entire "run it"
@@ -61,7 +61,7 @@ evening before a presentation.
 
 ```
 git clone https://github.com/ipalmer100/SpecWrite.git
-cd SpecWrite
+cd Cobalt
 git checkout claude/toppan-spec-management-r7nmue
 packaging\build_windows_exe.bat
 ```
@@ -73,7 +73,7 @@ The script:
 3. Creates an isolated Python virtual environment at
    `packaging\.build-venv` and installs the backend plus PyInstaller into
    it (keeps this off your system Python entirely).
-4. Runs PyInstaller against `packaging/specwrite.spec`, which bundles the
+4. Runs PyInstaller against `packaging/cobalt.spec`, which bundles the
    backend, the built frontend, the blank "New Spec" template, and
    (if found) LibreOffice into one app folder.
 
@@ -82,9 +82,9 @@ present and stops with a list of what's missing (and where to get it)
 rather than failing halfway through with a confusing error.
 
 Takes a few minutes (longer if bundling LibreOffice — it's copying a few
-hundred MB). When it finishes: **`packaging\dist\SpecWrite\`** is the
+hundred MB). When it finishes: **`packaging\dist\Cobalt\`** is the
 whole app. Copy or zip that folder anywhere — a USB drive, another
-machine, the desktop — and `SpecWrite.exe` inside it is the entire
+machine, the desktop — and `Cobalt.exe` inside it is the entire
 "install."
 
 ## Updating an app you already built
@@ -98,14 +98,14 @@ packaging\build_windows_exe.bat
 ```
 
 `git pull` brings down the new code; the build script rebuilds the
-frontend and re-runs PyInstaller. It overwrites `packaging\dist\SpecWrite\`
+frontend and re-runs PyInstaller. It overwrites `packaging\dist\Cobalt\`
 in place, so the app folder you already have is replaced by the new one —
 there's nothing to uninstall.
 
 Three things worth knowing:
 
 - **Close the running app first.** Windows won't let PyInstaller overwrite
-  `SpecWrite.exe` while it's running, and the failure looks like a
+  `Cobalt.exe` while it's running, and the failure looks like a
   permissions error rather than "the app is open". Close the console
   window the app opened, then build.
 - **Your specs are untouched.** The app folder holds no spec data — your
@@ -137,21 +137,21 @@ npm run build
 cd ..
 
 REM optional: bundle LibreOffice, skip these two lines to build without it
-set "SPECWRITE_LIBREOFFICE_DIR=%ProgramFiles%\LibreOffice"
+set "COBALT_LIBREOFFICE_DIR=%ProgramFiles%\LibreOffice"
 
 py -3 -m venv packaging\.build-venv
 packaging\.build-venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 python -m pip install -e "backend[build]"
 
-pyinstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\specwrite.spec
+pyinstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\cobalt.spec
 ```
 
 If `py` isn't recognised, use `python` in its place.
 
 ## Running it
 
-Double-click `SpecWrite.exe` (inside the `SpecWrite` folder — moving just
+Double-click `Cobalt.exe` (inside the `Cobalt` folder — moving just
 the exe out on its own won't work, it needs its sibling `_internal`
 folder). A console window opens (this is intentional — it shows what the
 app is doing, including whether `.doc` conversion is available and from
@@ -168,10 +168,10 @@ For showing this to people, run against a **copy** of a handful of specs,
 never the live library. Two folders:
 
 ```
-C:\SpecWriteDemo\
-    master\      <- pristine specs, never opened in SpecWrite
+C:\CobaltDemo\
+    master\      <- pristine specs, never opened in Cobalt
     live\        <- what you open; replaced on every reset
-    SpecWrite\   <- the app folder from the build
+    Cobalt\   <- the app folder from the build
 ```
 
 Put 20–40 specs in `master\`, in customer subfolders, and include **at
@@ -181,7 +181,7 @@ strongest moments and it needs a `.doc` to happen to.
 Then, before each run-through:
 
 ```
-python packaging\reset_demo.py --source C:\SpecWriteDemo\master --demo C:\SpecWriteDemo\live
+python packaging\reset_demo.py --source C:\CobaltDemo\master --demo C:\CobaltDemo\live
 ```
 
 Add `--list` to see what it would clear without changing anything.
@@ -194,7 +194,7 @@ has already been converted, so it can never convert again. The app treats
 so the reset deletes those generated files. Without that, your live demo
 silently loses its best beat.
 
-The reset also clears `.specwrite\` (the audit log and the exception-queue
+The reset also clears `.cobalt\` (the audit log and the exception-queue
 decisions), so the Audit Log tab starts empty and fills up in front of the
 room rather than showing yesterday's practice.
 
@@ -238,7 +238,7 @@ and `%ProgramFiles(x86)%\LibreOffice` on the build machine. If it finds
 LibreOffice there, it bundles the *entire* install (several hundred MB —
 LibreOffice isn't small, and its `soffice.exe` needs its sibling `share\`
 folder alongside it to run at all, not just the one exe) into
-`SpecWrite\_internal\libreoffice\`. `.doc` conversion then works on any
+`Cobalt\_internal\libreoffice\`. `.doc` conversion then works on any
 machine running the built app, with nothing else installed there.
 
 If LibreOffice isn't found on the build machine, the script proceeds

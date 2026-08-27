@@ -5,8 +5,8 @@ import time
 
 import pytest
 
-from specwrite.docx_sections import parse_bytes
-from specwrite.storage import ConflictError, LocalStore, StoreError
+from cobalt.docx_sections import parse_bytes
+from cobalt.storage import ConflictError, LocalStore, StoreError
 
 from .fixtures.builder import build_sample_spec_docx
 
@@ -32,8 +32,8 @@ def test_lists_specs_including_subfolders(tmp_path):
 def test_skips_lock_files_and_dotfolders(tmp_path):
     build_sample_spec_docx(str(tmp_path / "real.docx"))
     (tmp_path / "~$real.docx").write_bytes(b"word lock file")
-    (tmp_path / ".specwrite").mkdir()
-    build_sample_spec_docx(str(tmp_path / ".specwrite" / "hidden.docx"))
+    (tmp_path / ".cobalt").mkdir()
+    build_sample_spec_docx(str(tmp_path / ".cobalt" / "hidden.docx"))
     (tmp_path / "notes.txt").write_text("not a spec")
 
     names = [i.name for i in LocalStore(str(tmp_path)).list_specs()]

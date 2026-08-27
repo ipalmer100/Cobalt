@@ -1,6 +1,6 @@
-"""Entry point for the packaged desktop app (see packaging/specwrite.spec).
+"""Entry point for the packaged desktop app (see packaging/cobalt.spec).
 
-Runs the same FastAPI app as `uvicorn specwrite.api:app`, but as a
+Runs the same FastAPI app as `uvicorn cobalt.api:app`, but as a
 double-click .exe instead of a command someone types into a terminal:
 starts the server, opens the default browser to it, and keeps a console
 window open for as long as the app is running (closing that window, or
@@ -47,9 +47,9 @@ def main() -> None:
         webbrowser.open(f"http://{HOST}:{PORT}/")
         return
 
-    print("Starting SpecWrite...")
+    print("Starting Cobalt...")
     print(f"Opening http://{HOST}:{PORT}/ in your browser.")
-    print("Keep this window open while you're using SpecWrite; closing it stops the app.\n")
+    print("Keep this window open while you're using Cobalt; closing it stops the app.\n")
 
     found_soffice = soffice_path()
     if found_soffice:

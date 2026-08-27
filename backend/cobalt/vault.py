@@ -281,7 +281,7 @@ class Vault:
             if not path.is_file():
                 continue
             if any(part.startswith(".") for part in path.relative_to(root).parts):
-                continue  # skip .specwrite/ (audit log) and any other dotfolder
+                continue  # skip .cobalt/ (audit log) and any other dotfolder
             if _is_hidden_or_lock_file(path.name):
                 continue
             if not _is_spec_file(path.name):

@@ -1,5 +1,5 @@
 [project]
-name = "specwrite"
+name = "cobalt"
 version = "0.1.0"
 description = "Read/write .docx flexible-packaging specs as a live, folder-backed vault."
 requires-python = ">=3.11"
@@ -14,7 +14,7 @@ dependencies = [
 build = ["pyinstaller>=6.0"]
 
 [project.scripts]
-specwrite-desktop = "specwrite.desktop:main"
+cobalt-desktop = "cobalt.desktop:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

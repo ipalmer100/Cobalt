@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" role="img" aria-label="Cobalt">
+  <title>Cobalt</title>
+  <!--
+    The Cobalt mark: a faceted lump of cobalt ore, lit from the upper left.
+    Drawn as three flat tones over one silhouette so the facets can never
+    leave a seam between them, and as vectors so it stays sharp as a 16px
+    favicon and as a splash-screen graphic without shipping two assets.
+
+    Note for editors: XML forbids a double hyphen inside a comment, and an
+    SVG loaded through <img> is parsed strictly, so it fails to render
+    rather than degrading. Keep the prose here free of them.
+  -->
+  <g fill-rule="evenodd">
+    <!-- Silhouette, in the mid tone. Every facet below sits on top of this,
+         so any rounding between facet edges shows mid blue, not white. -->
+    <path fill="#1c1cf0" d="M455 50 531 76 515 165 644 165 708 242 910 439 866 644 729 725 636 845 573 942 463 962 419 902 314 729 250 717 129 644 97 435 149 378 213 233 282 201 334 125 395 71Z"/>
+
+    <!-- Shadowed faces: the right flank and the whole underside. -->
+    <path fill="#1b1a9e" d="M560 190 644 165 708 242 910 439 866 644 729 725 636 845 573 942 463 962 419 902 330 742 566 700 745 612 735 432 652 262Z"/>
+
+    <!-- Lit faces, upper left. The two leftward slivers are the cleavage
+         cracks in the ore, and are what make the mark recognisable at
+         small sizes, so keep them. -->
+    <path fill="#4d5bf5" d="M455 50 505 170 492 266 366 330 507 278 524 500 439 486 326 497 447 516 528 676 402 672 201 612 121 553 97 435 149 378 213 233 282 201 334 125 395 71Z"/>
+  </g>
+</svg>
