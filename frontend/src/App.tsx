@@ -7,10 +7,11 @@ import NewSpecModal from "./components/NewSpecModal";
 import AuditLogView from "./components/AuditLogView";
 import FolderPicker from "./components/FolderPicker";
 import ExceptionsView from "./components/ExceptionsView";
+import RevisionCheckView from "./components/RevisionCheckView";
 import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
 import "./App.css";
 
-type Mode = "detail" | "mass-edit" | "audit-log" | "exceptions";
+type Mode = "detail" | "mass-edit" | "audit-log" | "exceptions" | "revision-check";
 
 const WHO_STORAGE_KEY = "cobalt.who";
 // The vault folder is remembered so a daily user doesn't retype a long
@@ -241,6 +242,13 @@ export default function App() {
             Audit Log
           </button>
           <button
+            className={mode === "revision-check" ? "active" : ""}
+            onClick={() => setMode("revision-check")}
+            title="Specs whose stated revision and revision history don't agree"
+          >
+            Revision Check
+          </button>
+          <button
             className={mode === "exceptions" ? "active" : ""}
             onClick={() => setMode("exceptions")}
             title="Tables that need a human to say which section they belong to"
@@ -283,6 +291,16 @@ export default function App() {
         {mode === "mass-edit" && <MassEditGrid section={selectedView} refreshToken={refreshToken} who={who} />}
 
         {mode === "audit-log" && <AuditLogView refreshToken={refreshToken} />}
+
+        {mode === "revision-check" && (
+          <RevisionCheckView
+            refreshToken={refreshToken}
+            onOpenSpec={(path) => {
+              setSelectedPath(path);
+              setMode("detail");
+            }}
+          />
+        )}
 
         {mode === "exceptions" && (
           <ExceptionsView

@@ -3,6 +3,7 @@ import type {
   BatchEditItem,
   BrowseResponse,
   ExceptionsResponse,
+  RevisionCheckResponse,
   SpecDetail,
   VaultResponse,
   ViewResponse,
@@ -102,6 +103,10 @@ export function commitEdits(edits: BatchEditItem[], who: string, revision_text: 
     method: "POST",
     body: JSON.stringify({ edits, who, revision_text }),
   });
+}
+
+export function getRevisionCheck() {
+  return request<RevisionCheckResponse>("/revision-check");
 }
 
 export function appendRevision(path: string, who: string, revision_text: string) {

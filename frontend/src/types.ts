@@ -160,3 +160,20 @@ export interface BatchEditItem {
   value: string;
   table_index?: number | null;
 }
+
+export interface RevisionFinding {
+  path: string;
+  spec_number: string;
+  kind: "stated_missing" | "history_missing" | "mismatch" | "out_of_sequence" | "trailing_blank";
+  detail: string;
+  stated: string;
+  history_last: string;
+  continues_from: string;
+}
+
+export interface RevisionCheckResponse {
+  checked: number;
+  clean: number;
+  unreadable: { path: string; error: string }[];
+  findings: RevisionFinding[];
+}

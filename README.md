@@ -265,6 +265,34 @@ conversion works with nothing extra installed there — see
 and frontend as above, bundled with PyInstaller; building it still
 requires Python/Node once, on whichever Windows machine produces it.
 
+## Checking revision numbering
+
+A spec states its revision twice — the `Revision #` field in Product
+Description, and the last row of Revision History — and those must agree.
+When they drift, the document no longer establishes which version it is.
+
+The **Revision Check** tab lists every spec where they don't, and the two
+conditions that cause it: a revision number that repeats or goes backwards,
+and a Revision History ending in a blank row. It reports only. Renumbering
+a regulated document is the spec owner's decision, so each finding says
+what both sources claim and what the next revision would continue from,
+and stops there.
+
+Same check without opening the app, for sweeping an archive:
+
+```
+cd backend
+python -m cobalt.revision_audit "/path/to/specs"
+```
+
+Exits non-zero if anything was flagged or couldn't be read, so it works in
+a scheduled job.
+
+Worth running once over any folder edited by a Cobalt build before
+`0c1e54b`: that build took the next revision number from the last row of
+Revision History without checking whether the row carried one, so a spec
+whose table ends in a blank row was revised from `4` to `01`.
+
 ## Testing
 
 ```

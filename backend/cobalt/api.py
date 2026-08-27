@@ -26,6 +26,7 @@ from pydantic import BaseModel
 from .audit_log import append_entry, read_entries
 from .creation import CreationError, create_blank_spec, duplicate_spec
 from .docx_sections import ALL_SECTIONS, IGNORE, PRODUCT_DESCRIPTION
+from .revision_audit import audit_specs
 from .section_mappings import delete_mapping, load_mappings, save_mapping
 from .docx_writer import (
     append_row,
@@ -716,6 +717,25 @@ def post_create_blank_spec(req: CreateBlankSpecRequest) -> dict:
 def get_audit_log(limit: int = 200) -> dict:
     vault = _vault()
     return {"entries": read_entries(vault.root, limit=limit)}
+
+
+@app.get("/revision-check")
+def get_revision_check() -> dict:
+    """Specs whose revision numbering doesn't hold together.
+
+    Audits what the vault already has parsed rather than re-reading every
+    file, so this stays usable on a large library. Report only: renumbering
+    a regulated document is the spec owner's decision.
+    """
+    vault = _vault()
+    specs = [e.spec for e in vault.entries() if e.spec is not None]
+    result = audit_specs(specs).to_dict()
+    result["unreadable"] = [
+        {"path": e.path, "error": e.error}
+        for e in vault.entries()
+        if e.spec is None and e.supported and e.error
+    ]
+    return result
 
 
 @app.get("/exceptions")

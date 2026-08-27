@@ -1378,3 +1378,158 @@ textarea.detail-editor.dirty {
   color: var(--text-muted);
   margin: 0 0 12px;
 }
+
+/* --- Revision check: specs that can't say what revision they are --- */
+
+.revision-check-view {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 20px;
+}
+
+.revision-check-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 760px;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.revision-check-summary {
+  display: flex;
+  gap: 18px;
+  padding: 10px 0 16px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.revision-check-stat {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.revision-check-stat strong {
+  font-size: 18px;
+  color: var(--text);
+  margin-right: 5px;
+}
+
+.revision-check-stat.clean strong {
+  color: #1f8f4e;
+}
+
+.revision-check-stat.flagged strong {
+  color: var(--error);
+}
+
+.revision-check-clean {
+  padding: 20px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.revision-check-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+
+.revision-check-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  background: var(--bg-hover);
+  border-bottom: 1px solid var(--border);
+}
+
+.revision-check-open {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.revision-check-file {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 380px;
+}
+
+.revision-check-pair {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.revision-check-pair code,
+.revision-check-next code {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.revision-check-finding {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  /* The severity stripe: the eye should land on the worst one first. */
+  box-shadow: inset 3px 0 0 var(--text-muted);
+}
+
+.revision-check-finding:first-of-type {
+  border-top: none;
+}
+
+.revision-check-finding.mismatch,
+.revision-check-finding.stated_missing,
+.revision-check-finding.out_of_sequence {
+  box-shadow: inset 3px 0 0 var(--error);
+}
+
+.revision-check-kind {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 3px;
+}
+
+.revision-check-detail {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.revision-check-why,
+.revision-check-next {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.revision-check-next {
+  margin-top: 4px;
+}
+
+.revision-check-unreadable {
+  margin-top: 24px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.revision-check-unreadable h3 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--error);
+}
