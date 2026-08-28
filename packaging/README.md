@@ -60,7 +60,7 @@ evening before a presentation.
 ## Build it
 
 ```
-git clone https://github.com/ipalmer100/SpecWrite.git
+git clone https://github.com/ipalmer100/Cobalt.git
 cd Cobalt
 git checkout claude/toppan-spec-management-r7nmue
 packaging\build_windows_exe.bat
