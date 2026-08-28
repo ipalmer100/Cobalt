@@ -80,8 +80,30 @@ echo   with nothing else installed. This adds several hundred MB.
 :python_env
 echo.
 echo === Setting up an isolated Python build environment ===
+
+rem A virtualenv is not relocatable: the .exe shims in Scripts\ have the
+rem absolute path of their own python.exe compiled into them. Rename or
+rem move the repo folder and every shim still points at where the venv used
+rem to be, failing with "Fatal error in launcher: Unable to create process".
+rem The path the venv was built at is recorded here so a moved folder is
+rem detected and the venv rebuilt, rather than failing several minutes in.
+set "VENV_STAMP=packaging\.build-venv\.built-at"
+if not exist "packaging\.build-venv\Scripts\activate.bat" goto :make_venv
+if not exist "%VENV_STAMP%" goto :stale_venv
+set /p VENV_BUILT_AT=<"%VENV_STAMP%"
+if /i "%VENV_BUILT_AT%"=="%CD%" goto :have_venv
+
+:stale_venv
+echo   The build environment was created at a different path.
+echo   Rebuilding it - this is normal after renaming or moving the folder.
+rmdir /s /q packaging\.build-venv
+
+:make_venv
 %PYCMD% -m venv packaging\.build-venv
 if errorlevel 1 goto :error_venv
+>"%VENV_STAMP%" echo %CD%
+
+:have_venv
 
 call packaging\.build-venv\Scripts\activate.bat
 if errorlevel 1 goto :error_venv
@@ -92,7 +114,11 @@ if errorlevel 1 goto :error_deps
 
 echo.
 echo === Building Cobalt.exe - this can take a few minutes ===
-pyinstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\cobalt.spec
+rem `python -m PyInstaller`, not the bare `pyinstaller` command: that
+rem resolves to the Scripts\pyinstaller.exe shim, which carries a baked-in
+rem absolute path to its python.exe and breaks if the folder ever moves.
+rem Going through the interpreter sidesteps the shim entirely.
+python -m PyInstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\cobalt.spec
 if errorlevel 1 goto :error_pyinstaller
 
 echo.
