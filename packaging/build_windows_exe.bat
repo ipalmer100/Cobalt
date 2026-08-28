@@ -153,7 +153,15 @@ exit /b 1
 echo.
 echo Installing the Python dependencies failed.
 echo.
-echo Most common cause: no internet access, or a proxy blocking pip.
+echo Read the pip output above - the real cause is named in it. Two that
+echo look alarming but are quick to fix:
+echo.
+echo   "Multiple top-level packages discovered in a flat-layout"
+echo       A leftover backend\specwrite folder from before the rename to
+echo       Cobalt. Delete it and re-run:  rmdir /s /q backend\specwrite
+echo.
+echo   Connection / SSL / timeout errors
+echo       No internet access, or a proxy blocking pip.
 echo.
 exit /b 1
 

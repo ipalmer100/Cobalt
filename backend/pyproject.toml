@@ -13,6 +13,18 @@ dependencies = [
 [project.optional-dependencies]
 build = ["pyinstaller>=6.0"]
 
+# Named explicitly rather than left to setuptools' flat-layout
+# auto-discovery. Pulling across the SpecWrite -> Cobalt rename deletes the
+# old package's tracked files but leaves its untracked __pycache__ behind,
+# so backend/specwrite/ still exists on disk; auto-discovery then finds two
+# top-level packages and refuses to build at all. Listing the one real
+# package makes any stray sibling directory irrelevant.
+[tool.setuptools]
+packages = ["cobalt", "cobalt.templates"]
+
+[tool.setuptools.package-data]
+cobalt = ["templates/*.docx"]
+
 [project.scripts]
 cobalt-desktop = "cobalt.desktop:main"
 
