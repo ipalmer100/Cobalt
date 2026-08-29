@@ -1,4 +1,4 @@
-from cobalt.docx_sections import ALL_SECTIONS, parse_document
+from cobalt.docx_sections import ALL_SECTIONS, OPTIONAL_SECTIONS, parse_document
 from cobalt.models import TableShape
 
 from .fixtures.builder import build_sample_spec_docx
@@ -14,7 +14,10 @@ def test_parses_all_sections(tmp_path):
     assert spec.customer == "ACME Corp"
     assert spec.revision_number == "01"
     assert spec.warnings == []
-    assert set(spec.tables) == set(ALL_SECTIONS)
+    # Everything except the sections only some plants carry -- this fixture
+    # is an ordinary spec, and not having an Extruder Distribution table is
+    # the normal case rather than a parse failure.
+    assert set(spec.tables) == set(ALL_SECTIONS) - OPTIONAL_SECTIONS
 
 
 def test_records_shape_for_bom(tmp_path):

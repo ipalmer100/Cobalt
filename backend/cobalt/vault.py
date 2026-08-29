@@ -164,7 +164,7 @@ class Vault:
 
     def unclassified(self) -> list[dict]:
         """Every table the parser wasn't confident enough to file under one
-        of the 11 sections, grouped by heading so a heading shared across
+        of the canonical sections, grouped by heading so a heading shared across
         hundreds of specs is one decision rather than hundreds."""
         groups: dict[str, dict] = {}
         for entry in self.entries():

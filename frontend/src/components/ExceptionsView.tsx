@@ -11,7 +11,7 @@ interface Props {
 /**
  * The human-in-the-loop queue.
  *
- * The parser files a table under one of the 11 sections only when it can
+ * The parser files a table under a canonical section only when it can
  * tell confidently -- the exact section name, a known alias, or a qualified
  * variant of one ("Process Routing - Duplex"). Everything else lands here
  * rather than being guessed at, because a Press Specification table quietly
@@ -73,7 +73,7 @@ export default function ExceptionsView({ refreshToken, who, onResolved }: Props)
       {error && <div className="error banner">{error}</div>}
 
       <p className="exceptions-intro">
-        Tables whose heading doesn&rsquo;t clearly match one of the 11 sections. Nothing here is
+        Tables whose heading doesn&rsquo;t clearly match a known section. Nothing here is
         guessed at &mdash; allocate each one and its rows join that section&rsquo;s Mass Edit view.
         A decision applies to every spec using the same heading and is saved with the vault.
       </p>
@@ -137,7 +137,7 @@ export default function ExceptionsView({ refreshToken, who, onResolved }: Props)
               className="secondary"
               disabled={busy === group.heading}
               onClick={() => assign(group.heading, ignore)}
-              title="Not one of the 11 sections — stop listing it here"
+              title="Not a spec section — stop listing it here"
             >
               Not a spec section
             </button>

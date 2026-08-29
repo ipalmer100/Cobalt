@@ -1,6 +1,6 @@
 """Human decisions about where an unrecognized table belongs.
 
-The parser classifies a table's heading onto one of the 11 canonical
+The parser classifies a table's heading onto one of the canonical
 sections only when it can do so confidently -- an exact name, a known
 alias, or a qualified variant of one ("Process Routing - Duplex"). Anything
 else is left unclassified and shows up in the exception queue rather than

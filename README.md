@@ -8,7 +8,7 @@ Information, etc.) instead of opening one Word document at a time.
 ## How it works
 
 - **`backend/cobalt/docx_sections.py`** — reads a spec: finds each of
-  the 11 sections by locating its title paragraph and taking the table
+  the canonical sections by locating its title paragraph and taking the table
   that follows it (Product Description is the exception — it lives in
   the page header, with a fallback to the first body table for older
   specs that never got one).
@@ -23,7 +23,7 @@ Information, etc.) instead of opening one Word document at a time.
 - **`backend/cobalt/views.py`** — flattens every spec's copy of a
   section into `Spec Number | Customer | <columns> | File Path` rows —
   the shape of the sample Bill of Materials workbook, generalized to all
-  11 sections. Bill of Materials specifically unions Primary + Secondary
+  canonical sections. Bill of Materials specifically unions Primary + Secondary
   Approved Materials into one grid with a Material Type column, matching
   the existing VBA extractor's output.
 - **`backend/cobalt/api.py`** — FastAPI HTTP + WebSocket layer over
@@ -141,7 +141,7 @@ Two things worth knowing before rolling this out on synced storage:
 
 ### Table classification: confident matches only, everything else escalates
 
-The Mass Edit dropdown is always exactly the 11 canonical sections. What
+The Mass Edit dropdown is always exactly the canonical sections. What
 varies is which of a document's tables feed each one.
 
 - **A section can have several tables.** Franklin, OH writes specs
@@ -159,11 +159,28 @@ varies is which of a document's tables feed each one.
   Information`), or a canonical name qualified by a separator
   (`Process Routing - Duplex`, `Slitting Information - IMS Dairy
   Product`).
+- **Headings are matched as a reader would read them.** Measuring a real
+  1,811-spec archive turned up around forty specs losing a whole section
+  to how its heading was typed, and each rule below exists for cases
+  found there:
+  - punctuation is ignored, so `Bill of Materials-` and `Slitting
+    Information:` match;
+  - a stray character run together with the name is dropped —
+    `eLocations`, `9Revision History`, `2.99Locations`. It has to be
+    *run together*: `Press Packing Information` has a space, is a
+    different section, and still goes to the queue;
+  - a bilingual heading is read up to the slash, so `Packing
+    Information/ Information d'emballage` is Packing Information;
+  - a misspelling within one edit of a section's name matches it
+    (`Packing Informatio`, `litting Information`, `Physical Attribues &
+    Testing`, `Location`), two edits for the longer names — and never
+    when two sections are both in range, because a heading guessed
+    wrong writes into the wrong table.
 - **Everything else goes to the Exceptions queue rather than being
   guessed at.** `Press Specification`, `Quality Issues`, `S3 Machine
   Conditions` and the like are shown with a preview of their contents
-  and the specs they appear in, and a human allocates each to one of the
-  11 (or marks it "not a spec section"). Guessing here would be worse
+  and the specs they appear in, and a human allocates each to a
+  canonical section (or marks it "not a spec section"). Guessing here would be worse
   than not reading the table at all — a Press Specification quietly
   filed under Process Routing corrupts what everyone reads off the grid,
   invisibly.

@@ -1,4 +1,4 @@
-"""Read-side parser: locate each spec's 11 sections inside a .docx and
+"""Read-side parser: locate each spec's canonical sections inside a .docx and
 flatten them into structured tables.
 
 Detection strategy (generalized from the org's existing BOM-extraction VBA):
@@ -28,6 +28,15 @@ BODY_SECTIONS = [
     "Bill of Materials",
     "Secondary Approved Materials",
     "Process Routing",
+    # Two process sections the extrusion plants carry. Neither is in every
+    # spec -- roughly 190 specs each in the archive this was measured
+    # against -- but before they were named here their tables were
+    # unclassifiable, so that data could not be seen or mass-edited at all.
+    # "Blown Film - Blender Verification on KIEFEL Line" and the ALPINE one
+    # are the same section for two machines, so they come through as
+    # variants of it, the way Process Routing does for Duplex/Triplex.
+    "Extruder Distribution",
+    "Blown Film Blender Verification",
     "Physical Attributes & Testing",
     "Slitting Information",
     "Packing Information",
@@ -37,6 +46,12 @@ BODY_SECTIONS = [
 ]
 
 ALL_SECTIONS = [PRODUCT_DESCRIPTION, *BODY_SECTIONS]
+
+# Sections only some plants carry. Every spec has a Bill of Materials, so a
+# spec without one is worth saying so about; nine specs in ten have no
+# Extruder Distribution, and warning about that on all of them would bury
+# the warnings that mean something.
+OPTIONAL_SECTIONS = {"Extruder Distribution", "Blown Film Blender Verification"}
 
 _FIELD_GRID_MIN_COLON_FRACTION = 0.25
 
@@ -71,7 +86,7 @@ for _alias, _canonical in _SECTION_ALIASES.items():
 _VARIANT_SEPARATORS = ("-", "–", "—", ":", "(", "‒")
 
 # Sentinel a human can assign in the exception queue to mean "this table
-# isn't one of the 11 -- stop asking about it".
+# isn't a canonical section -- stop asking about it".
 IGNORE = "__ignore__"
 
 
@@ -106,6 +121,62 @@ def classify_heading(
     return None, ""
 
 
+# Punctuation carries no meaning in a heading, and real specs are full of
+# it: "Bill of Materials-", "Slitting Information:", "Blown Film - Blender
+# Verification on ALPINE Line". Comparing with every non-alphanumeric
+# character turned into a space lets one rule cover all of them. Case is
+# preserved in a parallel copy so a variant keeps its own spelling, and
+# since the substitution is character-for-character the two stay aligned.
+def _soften(text: str) -> str:
+    return _collapse(re.sub(r"[^0-9A-Za-z]", " ", text))
+
+
+_SOFT_BODY_SECTIONS = {_soften(name).lower(): name for name in BODY_SECTIONS}
+for _alias, _canonical in _SECTION_ALIASES.items():
+    _SOFT_BODY_SECTIONS[_soften(_alias).lower()] = _canonical
+
+# How far a heading may be from a section's name and still be that section.
+# Every misspelling found in a 1,811-spec archive is one edit away -- a
+# dropped letter ("Packing Informatio", "litting Information"), a
+# transposition ("Physical Attribues & Testing"), a missing plural
+# ("Location"). Two edits are allowed only for the long names, where the
+# nearest other section is far enough away that nothing becomes ambiguous.
+def _edit_budget(name: str) -> int:
+    return 2 if len(name) >= 20 else 1
+
+
+def _within(a: str, b: str, budget: int) -> bool:
+    """Levenshtein distance <= budget, abandoned as soon as it cannot be."""
+    if abs(len(a) - len(b)) > budget:
+        return False
+    previous = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        current = [i]
+        for j, cb in enumerate(b, start=1):
+            current.append(
+                previous[j - 1] if ca == cb else 1 + min(previous[j - 1], previous[j], current[j - 1])
+            )
+        if min(current) > budget:
+            return False
+        previous = current
+    return previous[-1] <= budget
+
+
+def _fuzzy_section(soft_norm: str) -> str | None:
+    """The one section a misspelt heading can only have meant, or None.
+
+    Deliberately refuses to choose when two sections are both in range: a
+    heading guessed wrong is worse than one sent to the exception queue,
+    because a wrong guess routes writes into the wrong table.
+    """
+    hits = {
+        canonical
+        for key, canonical in _SOFT_BODY_SECTIONS.items()
+        if _within(soft_norm, key, _edit_budget(key))
+    }
+    return hits.pop() if len(hits) == 1 else None
+
+
 def _match_known(collapsed: str) -> tuple[str, str] | None:
     norm = collapsed.lower()
     if norm in _NORMALIZED_BODY_SECTIONS:
@@ -126,7 +197,62 @@ def _match_known(collapsed: str) -> tuple[str, str] | None:
         if not variant:
             continue
         return _NORMALIZED_BODY_SECTIONS[key], variant
-    return None
+
+    return _match_loosely(collapsed)
+
+
+def _match_loosely(collapsed: str) -> tuple[str, str] | None:
+    """Everything the strict matcher rejects but a reader would not.
+
+    Each rule below was written for headings actually found in the archive,
+    and each one narrows the heading down to something the strict rules can
+    then judge -- none of them decides a section by itself except the last.
+    """
+    # A bilingual heading names the section, then translates it:
+    # "Packing Information/ Information d'emballage". The half before the
+    # slash is the heading; the rest is the same words in French.
+    if "/" in collapsed:
+        head = collapsed.split("/", 1)[0].strip()
+        if head and head != collapsed:
+            match = _match_known(head)
+            if match:
+                return match
+
+    soft = _soften(collapsed)
+    soft_norm = soft.lower()
+    if not soft_norm:
+        return None
+
+    if soft_norm in _SOFT_BODY_SECTIONS:
+        return _SOFT_BODY_SECTIONS[soft_norm], ""
+
+    # Punctuation-insensitive variant match, which is how the two Blown Film
+    # tables come through: "Blown Film - Blender Verification on ALPINE
+    # Line" softens to the section's name followed by "on ALPINE Line".
+    for key in sorted(_SOFT_BODY_SECTIONS, key=len, reverse=True):
+        if soft_norm.startswith(key) and len(soft_norm) > len(key) and soft_norm[len(key)] == " ":
+            variant = soft[len(key):].strip()
+            # "on KIEFEL Line" names the machine; the "on" is not part of it.
+            if variant.lower().startswith("on "):
+                variant = variant[3:].strip()
+            if variant:
+                return _SOFT_BODY_SECTIONS[key], variant
+
+    # A stray character typed into the heading paragraph, run together with
+    # the real name: "eLocations", "9Revision History", "2.99Locations",
+    # "snippinLocations". What marks it as a slip rather than a qualifier is
+    # that nothing separates it from the name -- "Press Packing
+    # Information" is a genuinely different section and has a space there,
+    # so it is left for a human to place.
+    norm = collapsed.lower()
+    for key, canonical in _NORMALIZED_BODY_SECTIONS.items():
+        if norm.endswith(key) and len(norm) > len(key):
+            prefix = norm[: -len(key)]
+            if len(prefix) <= 8 and not prefix.endswith(" "):
+                return canonical, ""
+
+    section = _fuzzy_section(soft_norm)
+    return (section, "") if section else None
 
 
 def _table_to_rows(table: Table) -> list[list[str]]:
@@ -336,7 +462,7 @@ def _parse(source, key: str, overrides: dict[str, str] | None = None) -> Spec:  
         tables.setdefault(section, []).extend(found)
 
     for name in ALL_SECTIONS:
-        if name not in tables:
+        if name not in tables and name not in OPTIONAL_SECTIONS:
             warnings.append(f"Section not found: {name}")
 
     pd_fields = tables[PRODUCT_DESCRIPTION][0].fields()

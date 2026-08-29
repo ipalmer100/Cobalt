@@ -1,7 +1,7 @@
 """Tabular mass-edit projections: one view per table name, flattening
 every spec in the vault into ``Spec Number | Customer | <columns> | File
 Path`` rows — the shape from the Bill of Materials Excel example,
-generalized to all 11 sections.
+generalized to every canonical section.
 
 Bill of Materials is a special case: the sample workbook (and the existing
 VBA extractor) union it with Secondary Approved Materials into one sheet,

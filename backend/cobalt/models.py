@@ -1,6 +1,6 @@
 """Data model for a parsed spec document.
 
-A spec's 11 sections come in two physical shapes inside the .docx:
+A spec's canonical sections come in two physical shapes inside the .docx:
 
 - ``records``: a header row of column names followed by N data rows
   (Bill of Materials, Secondary Approved Materials, Process Routing,
@@ -119,7 +119,7 @@ class ParsedTable:
 @dataclass
 class UnclassifiedTable:
     """A table whose heading the parser could not confidently map onto one
-    of the 11 canonical sections. Rather than guessing (and silently filing
+    of the canonical sections. Rather than guessing (and silently filing
     real data under the wrong section), these are surfaced in the exception
     queue for a human to allocate."""
 

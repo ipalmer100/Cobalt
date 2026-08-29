@@ -740,7 +740,7 @@ def get_revision_check() -> dict:
 
 @app.get("/exceptions")
 def get_exceptions() -> dict:
-    """Tables the parser could not confidently file under one of the 11
+    """Tables the parser could not confidently file under one of the
     sections, grouped by heading, plus the decisions already made. This is
     the queue a human works through — the app deliberately does not guess."""
     vault = _vault()
