@@ -10,6 +10,7 @@ import ExceptionsView from "./components/ExceptionsView";
 import RevisionCheckView from "./components/RevisionCheckView";
 import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
 import type { StatusFilter } from "./specStatus";
+import { isMassEditable, type CategoryFilter } from "./specCategory";
 import "./App.css";
 
 type Mode = "detail" | "mass-edit" | "audit-log" | "exceptions" | "revision-check";
@@ -66,6 +67,9 @@ export default function App() {
   // default: the toggles narrow the view when asked, they don't hide
   // anything from someone who hasn't touched them.
   const [status, setStatus] = useState<StatusFilter>({ showActive: true, showInactive: true });
+  // Which kind of spec is being looked at. "all" by default -- the filter
+  // is for narrowing to one family on purpose, not a mode to be stuck in.
+  const [category, setCategory] = useState<CategoryFilter>("all");
 
   function updateWho(value: string) {
     setWho(value);
@@ -218,6 +222,8 @@ export default function App() {
         selectedPath={selectedPath}
         status={status}
         onStatusChange={setStatus}
+        category={category}
+        onCategoryChange={setCategory}
         onSelect={setSelectedPath}
         onNewSpec={() => setShowNewSpec(true)}
         onChangeFolder={() => {
@@ -299,7 +305,13 @@ export default function App() {
           ))}
 
         {mode === "mass-edit" && (
-          <MassEditGrid section={selectedView} refreshToken={refreshToken} who={who} status={status} />
+          <MassEditGrid
+            section={selectedView}
+            refreshToken={refreshToken}
+            who={who}
+            status={status}
+            excludedSpecs={entries.filter((e) => e.category && !isMassEditable(e.category)).length}
+          />
         )}
 
         {mode === "audit-log" && <AuditLogView refreshToken={refreshToken} />}

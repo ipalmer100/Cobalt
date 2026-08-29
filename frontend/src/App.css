@@ -1597,3 +1597,181 @@ textarea.detail-editor.dirty {
   cursor: pointer;
   white-space: nowrap;
 }
+
+/* ---------------------------------------------------------------------
+   Spec categories
+
+   A category is a kind of document, not a status, so it reads differently
+   from the Active/Inactive toggles above it: one connected segmented
+   control, exactly one choice at a time. Blown Film carries its own colour
+   wherever it appears -- the control, the chip on a sidebar row, the chip
+   in the spec header, the banner -- so the same idea is recognisable in
+   four places without re-reading the label each time.
+   --------------------------------------------------------------------- */
+:root {
+  /* Teal, deliberately not the amber the warnings block uses: a category
+     says what kind of document this is, a warning says something may be
+     missing from it, and the two must not read as the same message. Also
+     clear of the indigo app accent, which means "selected". Three colours,
+     three meanings.
+     --solid is the one white text sits on, so it stays dark enough for
+     that in both themes; --soft is the tint behind chips and the banner. */
+  --category-blown-film: #0f6f68;
+  --category-blown-film-solid: #0f766e;
+  --category-blown-film-soft: rgba(15, 118, 110, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --category-blown-film: #5ecfc4;
+    --category-blown-film-solid: #12786f;
+    --category-blown-film-soft: rgba(94, 207, 196, 0.14);
+  }
+}
+
+.sidebar-category {
+  padding: 10px 10px 0;
+}
+
+.sidebar-filter-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+/* One control, not three buttons: the shared border and the single
+   1px gap between segments are what make it read as "pick one of these". */
+.category-segmented {
+  display: flex;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+  background: var(--border);
+  gap: 1px;
+}
+
+.category-option {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 5px 4px;
+  border: none;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.category-option:hover:not(.selected) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.category-option-name {
+  font-weight: 600;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.category-option-count {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+
+.category-option.selected {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Selecting Blown Film shows its own colour rather than the app accent, so
+   the control itself says which kind of spec is on screen. */
+.category-option.selected.category-blown-film {
+  background: var(--category-blown-film-solid);
+}
+
+.category-note {
+  margin-top: 5px;
+  font-size: 10px;
+  color: var(--category-blown-film);
+}
+
+/* The chip that marks an individual spec, in the sidebar and in the spec
+   header. Small enough to sit inside a filename without pushing it around. */
+.category-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.category-tag.category-blown-film {
+  background: var(--category-blown-film-soft);
+  color: var(--category-blown-film);
+}
+
+/* The selected row is already filled with the app accent, and a tinted
+   chip on top of it is unreadable. Inside that fill the chip borrows the
+   row's own contrast instead of carrying its own colour. */
+.sidebar-item.selected .category-tag {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* Informational, not a warning: this spec is a different kind of document,
+   not a broken one. Hence the left rule and soft tint rather than the
+   error styling used for things that went wrong. */
+.category-banner {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border-left: 3px solid var(--category-blown-film);
+  border-radius: 0 6px 6px 0;
+  background: var(--category-blown-film-soft);
+}
+
+.category-banner-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--category-blown-film);
+  margin-bottom: 2px;
+}
+
+.category-banner-body {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/* Said out loud in the grid toolbar. A row count that silently covers
+   fewer specs than the vault is a row count nobody can rely on. */
+.grid-excluded-note {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--category-blown-film-soft);
+  color: var(--category-blown-film);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: help;
+}
+
+/* The row count already sat at the right; with a note beside it, only one
+   of the two should claim the free space. */
+.grid-excluded-note + .grid-row-count {
+  margin-left: 10px;
+}

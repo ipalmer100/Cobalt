@@ -11,11 +11,19 @@ separate views for what the business treats as one editable list.
 
 from __future__ import annotations
 
-from .docx_sections import BODY_SECTIONS, PRODUCT_DESCRIPTION
+from .docx_sections import (
+    CATEGORY_STANDARD,
+    PRODUCT_DESCRIPTION,
+    STANDARD_SECTIONS,
+    spec_category,
+)
 from .models import ParsedTable, Spec, TableShape
 from .vault import VaultEntry
 
-VIEW_NAMES = [PRODUCT_DESCRIPTION, *[s for s in BODY_SECTIONS if s != "Secondary Approved Materials"]]
+# The standard category's sections, and only those: a view for a section
+# that belongs to another category would be a grid of a handful of specs
+# masquerading as a vault-wide one.
+VIEW_NAMES = list(STANDARD_SECTIONS)
 
 REVISION_HISTORY = "Revision History"
 REVISION_NUMBER_FIELD = "Revision #"
@@ -108,6 +116,12 @@ def build_view(entries: list[VaultEntry], section: str) -> list[dict]:
     for entry in entries:
         spec: Spec | None = entry.spec
         if spec is None:
+            continue
+        # Mass Edit is the standard category. A blown film spec is edited
+        # one at a time in Spec Detail, so its rows never reach a grid --
+        # which is also what keeps a fill or a bulk revision from reaching
+        # one by accident.
+        if spec_category(spec) != CATEGORY_STANDARD:
             continue
 
         if section == "Bill of Materials":

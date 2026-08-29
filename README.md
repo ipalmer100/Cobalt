@@ -139,6 +139,41 @@ Two things worth knowing before rolling this out on synced storage:
   is no file locking: two people editing the same spec is last-write-wins
   plus whatever conflict copy the sync client makes.
 
+### Spec categories: not every spec is the same kind of document
+
+The extrusion plants' specs are built around sections no other spec has —
+Extruder Distribution, and Blender Verification on the KIEFEL and ALPINE
+lines. They are far enough from the standard shape that editing them
+alongside the rest was wrong: one grid, one fill, one revision spanning
+documents that do not resemble each other.
+
+So a spec has a **category**, read from the sections it carries, and the
+category decides what the app offers:
+
+| Category | Sections that define it | Spec Detail | Mass Edit |
+| --- | --- | --- | --- |
+| **Standard** | — | yes | yes |
+| **Blown Film** | Extruder Distribution, Blown Film Blender Verification | yes | no |
+
+Mass Edit is the standard category, and its views are exactly the eleven
+standard sections. A Blown Film spec is still fully readable and fully
+editable — Spec Detail shows every one of its sections, including the ones
+that categorised it, and saving works the same way with the same revision
+prompt. What it does not get is bulk treatment alongside documents it does
+not resemble, which also means a fill or a batch revision cannot reach one
+by accident.
+
+The category is visible without opening anything: a **Category** control at
+the top of the sidebar (All / Standard / Blown Film, each with a count), a
+chip on each non-standard spec in the list and in its header, and a count in
+the Mass Edit toolbar of how many specs the grid's category leaves out — a
+row count that silently covers fewer specs than the vault is one nobody can
+rely on.
+
+Adding a category later means naming its sections in `docx_sections.py`
+(`BLOWN_FILM_SECTIONS` and the two constants beside it) and nothing else:
+`STANDARD_SECTIONS`, the view list and the filter all derive from that.
+
 ### Table classification: confident matches only, everything else escalates
 
 The Mass Edit dropdown is always exactly the canonical sections. What

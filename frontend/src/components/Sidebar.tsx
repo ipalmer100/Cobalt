@@ -1,7 +1,8 @@
 import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { VaultEntry } from "../types";
+import type { SpecCategory, VaultEntry } from "../types";
 import { isInactive, type StatusFilter } from "../specStatus";
+import { CATEGORY_LABELS, isMassEditable, type CategoryFilter } from "../specCategory";
 
 interface Props {
   root: string;
@@ -9,6 +10,8 @@ interface Props {
   selectedPath: string | null;
   status: StatusFilter;
   onStatusChange: (next: StatusFilter) => void;
+  category: CategoryFilter;
+  onCategoryChange: (next: CategoryFilter) => void;
   onSelect: (path: string) => void;
   onNewSpec: () => void;
   onChangeFolder: () => void;
@@ -47,6 +50,8 @@ export default function Sidebar({
   selectedPath,
   status,
   onStatusChange,
+  category,
+  onCategoryChange,
   onSelect,
   onNewSpec,
   onChangeFolder,
@@ -72,17 +77,37 @@ export default function Sidebar({
     [sorted, root],
   );
 
+  // Counted once, so each choice can say how many specs it holds -- the
+  // number is what makes the filter safe to use: you can see nothing has
+  // gone missing, it has just moved.
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<SpecCategory, number>();
+    for (const entry of sorted) {
+      if (!entry.category) continue;
+      counts.set(entry.category, (counts.get(entry.category) ?? 0) + 1);
+    }
+    return counts;
+  }, [sorted]);
+
+  // Offered only when the vault actually holds more than one kind of spec.
+  // A control that cannot change anything is noise in a narrow sidebar.
+  const categories = useMemo(
+    () => (Object.keys(CATEGORY_LABELS) as SpecCategory[]).filter((c) => (categoryCounts.get(c) ?? 0) > 0),
+    [categoryCounts],
+  );
+
   // Search spec number, customer, file name and folder together: people look
   // for a spec by whichever of those they happen to know.
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
     return sorted.filter((entry) => {
+      if (category !== "all" && entry.category !== category) return false;
       if (!(isInactive(root, entry.path) ? showInactive : showActive)) return false;
       if (!term) return true;
       return [entry.spec_number, entry.customer, fileName(entry.path), relativeFolder(root, entry.path)]
         .some((field) => (field ?? "").toLowerCase().includes(term));
     });
-  }, [sorted, query, root, showActive, showInactive]);
+  }, [sorted, query, root, showActive, showInactive, category]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -108,6 +133,41 @@ export default function Sidebar({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
+      {categories.length > 1 && (
+        <div className="sidebar-category">
+          <div className="sidebar-filter-label">Category</div>
+          <div className="category-segmented" role="group" aria-label="Spec category">
+            <button
+              className={`category-option ${category === "all" ? "selected" : ""}`}
+              onClick={() => onCategoryChange("all")}
+              aria-pressed={category === "all"}
+              title="Every spec in the vault"
+            >
+              <span className="category-option-name">All</span>
+              <span className="category-option-count">{sorted.length}</span>
+            </button>
+            {categories.map((name) => (
+              <button
+                key={name}
+                className={`category-option ${category === name ? "selected" : ""} category-${name}`}
+                onClick={() => onCategoryChange(name)}
+                aria-pressed={category === name}
+                title={
+                  isMassEditable(name)
+                    ? `${CATEGORY_LABELS[name]} specs — Spec Detail and Mass Edit`
+                    : `${CATEGORY_LABELS[name]} specs — Spec Detail only, not covered by Mass Edit`
+                }
+              >
+                <span className="category-option-name">{CATEGORY_LABELS[name]}</span>
+                <span className="category-option-count">{categoryCounts.get(name)}</span>
+              </button>
+            ))}
+          </div>
+          {!isMassEditable(category === "all" ? "standard" : category) && (
+            <div className="category-note">Spec Detail only — no mass editing</div>
+          )}
+        </div>
+      )}
       {inactiveCount > 0 && (
         <div className="sidebar-status-filter">
           <button
@@ -126,7 +186,7 @@ export default function Sidebar({
           </button>
         </div>
       )}
-      {(query.trim() !== "" || !showActive || !showInactive) && (
+      {(query.trim() !== "" || !showActive || !showInactive || category !== "all") && (
         <div className="sidebar-search-count">
           {filtered.length} of {sorted.length}
         </div>
@@ -152,7 +212,17 @@ export default function Sidebar({
                 onClick={() => onSelect(entry.path)}
                 title={entry.error ?? entry.path}
               >
-                <span className="sidebar-item-name">{fileName(entry.path)}</span>
+                <span className="sidebar-item-name">
+                  {fileName(entry.path)}
+                  {/* Marked on the row itself, not only in the filter: in a
+                      mixed list you have to be able to tell which specs
+                      Mass Edit will not cover without selecting them. */}
+                  {entry.category && !isMassEditable(entry.category) && (
+                    <span className={`category-tag category-${entry.category}`}>
+                      {CATEGORY_LABELS[entry.category]}
+                    </span>
+                  )}
+                </span>
                 {folder && (
                   <span className="sidebar-item-folder" title={entry.path}>
                     {folder}

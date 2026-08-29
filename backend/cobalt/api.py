@@ -25,7 +25,14 @@ from pydantic import BaseModel
 
 from .audit_log import append_entry, read_entries
 from .creation import CreationError, create_blank_spec, duplicate_spec
-from .docx_sections import ALL_SECTIONS, IGNORE, PRODUCT_DESCRIPTION
+from .docx_sections import (
+    ALL_SECTIONS,
+    CATEGORY_LABELS,
+    IGNORE,
+    PRODUCT_DESCRIPTION,
+    categorizing_sections,
+    spec_category,
+)
 from .revision_audit import audit_specs
 from .section_mappings import delete_mapping, load_mappings, save_mapping
 from .docx_writer import (
@@ -376,6 +383,11 @@ def list_vault() -> JSONResponse:
                 "customer": e.spec.customer if e.spec else None,
                 "revision_number": e.spec.revision_number if e.spec else None,
                 "warnings": e.spec.warnings if e.spec else [],
+                # Which family of document this is. Drives what the app
+                # offers for it: the standard category gets Mass Edit,
+                # everything else is edited a spec at a time.
+                "category": spec_category(e.spec) if e.spec else None,
+                "category_sections": categorizing_sections(e.spec) if e.spec else [],
             }
         )
     # Returned as a raw JSONResponse rather than a plain dict: at thousands
@@ -394,13 +406,18 @@ def get_spec(path: str) -> dict:
         raise HTTPException(status_code=404, detail="File not in vault")
     if entry.spec is None:
         raise HTTPException(status_code=422, detail=entry.error or "Unparsed file")
-    return entry.spec.to_dict()
+    return {
+        **entry.spec.to_dict(),
+        "category": spec_category(entry.spec),
+        "category_sections": categorizing_sections(entry.spec),
+    }
 
 
 @app.get("/views")
 def list_views() -> dict:
     return {
         "views": VIEW_NAMES,
+        "categories": CATEGORY_LABELS,
         "views_meta": {
             name: {"editable": is_view_editable(name), "readonly_columns": readonly_columns_for(name)}
             for name in VIEW_NAMES

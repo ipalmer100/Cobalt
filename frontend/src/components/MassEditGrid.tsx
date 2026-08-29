@@ -15,6 +15,10 @@ interface Props {
   // screen. Rows from a spec the filter excludes never reach the grid, so
   // a fill or a mass edit cannot touch a spec that is out of scope.
   status: StatusFilter;
+  // Specs whose category Mass Edit does not cover. Stated rather than
+  // silently omitted: a grid that quietly holds fewer specs than the vault
+  // is a grid nobody can trust the row count of.
+  excludedSpecs: number;
 }
 
 type SortDir = "asc" | "desc";
@@ -243,7 +247,7 @@ interface DragState {
   currentIndex: number;
 }
 
-export default function MassEditGrid({ section, refreshToken, who, status }: Props) {
+export default function MassEditGrid({ section, refreshToken, who, status, excludedSpecs }: Props) {
   const [rows, setRows] = useState<ViewRow[]>([]);
   const [editable, setEditable] = useState(true);
   const [readonlyColumns, setReadonlyColumns] = useState<string[]>([]);
@@ -664,6 +668,14 @@ export default function MassEditGrid({ section, refreshToken, who, status }: Pro
             />
             Show {columnIndex.rareCount} rare {columnIndex.rareCount === 1 ? "column" : "columns"}
           </label>
+        )}
+        {excludedSpecs > 0 && (
+          <span
+            className="grid-excluded-note"
+            title="Blown Film specs are a different kind of document and are edited one at a time in Spec Detail"
+          >
+            {excludedSpecs} Blown Film {excludedSpecs === 1 ? "spec" : "specs"} not shown
+          </span>
         )}
         <span className="grid-row-count">{sortedRows.length} rows</span>
       </div>

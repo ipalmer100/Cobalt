@@ -47,11 +47,46 @@ BODY_SECTIONS = [
 
 ALL_SECTIONS = [PRODUCT_DESCRIPTION, *BODY_SECTIONS]
 
-# Sections only some plants carry. Every spec has a Bill of Materials, so a
-# spec without one is worth saying so about; nine specs in ten have no
-# Extruder Distribution, and warning about that on all of them would bury
-# the warnings that mean something.
-OPTIONAL_SECTIONS = {"Extruder Distribution", "Blown Film Blender Verification"}
+# ---------------------------------------------------------------------------
+# Spec categories
+#
+# Not every spec in the archive is the same kind of document. The extrusion
+# plants' specs are built around sections no other spec has, and are far
+# enough from the standard shape that editing them alongside the rest --
+# one grid, one fill, one revision covering both -- was wrong. So they are
+# their own category, and Mass Edit is the standard category only. A blown
+# film spec is still fully readable and editable one at a time in Spec
+# Detail; what it does not get is bulk treatment alongside documents it
+# does not resemble.
+#
+# A category is defined by the sections only it has, so adding one later
+# means naming its sections here and nothing else.
+CATEGORY_STANDARD = "standard"
+CATEGORY_BLOWN_FILM = "blown-film"
+
+CATEGORY_LABELS = {CATEGORY_STANDARD: "Standard", CATEGORY_BLOWN_FILM: "Blown Film"}
+
+BLOWN_FILM_SECTIONS = ["Extruder Distribution", "Blown Film Blender Verification"]
+
+# The sections a standard spec is made of -- and exactly the Mass Edit
+# views, so the grid can never offer a section only another category has.
+STANDARD_SECTIONS = [name for name in ALL_SECTIONS if name not in BLOWN_FILM_SECTIONS]
+
+# Sections only some specs carry. Every standard spec has a Bill of
+# Materials, so a spec without one is worth saying so about; nine specs in
+# ten have no Extruder Distribution, and warning about that on all of them
+# would bury the warnings that mean something.
+OPTIONAL_SECTIONS = set(BLOWN_FILM_SECTIONS)
+
+
+def categorizing_sections(spec) -> list[str]:  # noqa: ANN001 - Spec, imported below
+    """The sections that put this spec outside the standard category."""
+    return [name for name in BLOWN_FILM_SECTIONS if spec.tables.get(name)]
+
+
+def spec_category(spec) -> str:  # noqa: ANN001
+    """Which category a spec belongs to, read from the sections it carries."""
+    return CATEGORY_BLOWN_FILM if categorizing_sections(spec) else CATEGORY_STANDARD
 
 _FIELD_GRID_MIN_COLON_FRACTION = 0.25
 

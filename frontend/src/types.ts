@@ -1,3 +1,8 @@
+// Which family of document a spec belongs to, read from the sections it
+// carries. Drives what the app offers for it: "standard" specs get Mass
+// Edit, every other category is edited one spec at a time in Spec Detail.
+export type SpecCategory = "standard" | "blown-film";
+
 export interface VaultEntry {
   path: string;
   supported: boolean;
@@ -6,6 +11,10 @@ export interface VaultEntry {
   customer: string | null;
   revision_number: string | null;
   warnings: string[];
+  category: SpecCategory | null;
+  // The sections that put it in that category -- named so the app can say
+  // *why* a spec is out of the grid rather than just that it is.
+  category_sections: string[];
 }
 
 export interface VaultResponse {
@@ -35,6 +44,8 @@ export interface SpecDetail {
   sections: Record<string, SpecSection[]>;
   warnings: string[];
   unclassified: UnclassifiedTable[];
+  category: SpecCategory;
+  category_sections: string[];
 }
 
 export interface UnclassifiedTable {

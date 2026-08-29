@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { commitEdits } from "../api";
 import RevisionPrompt from "./RevisionPrompt";
 import AutoTextarea from "./AutoTextarea";
+import { categoryLabel, isMassEditable } from "../specCategory";
 import type { BatchEditItem, SpecDetail as SpecDetailType, SpecSection } from "../types";
 
 interface Props {
@@ -117,6 +118,9 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
           {spec.spec_number} — {spec.customer}
         </h2>
         <span className="spec-rev">Revision {spec.revision_number}</span>
+        {!isMassEditable(spec.category) && (
+          <span className={`category-tag category-${spec.category}`}>{categoryLabel(spec.category)}</span>
+        )}
 
         <div className="spec-edit-controls">
           {!editing && (
@@ -153,6 +157,23 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
           ? "Changes are held here until you save. Saving asks you to describe the revision."
           : "Read-only. Press Edit to make changes."}
       </p>
+
+      {/* Not a warning: a blown film spec is a different kind of document,
+          not a broken one. It says which sections make it one and what
+          that changes, so the answer to "why isn't this in the grid?" is
+          on the spec itself rather than somewhere else. */}
+      {!isMassEditable(spec.category) && (
+        <div className={`category-banner category-${spec.category}`}>
+          <div className="category-banner-title">{categoryLabel(spec.category)} spec</div>
+          <div className="category-banner-body">
+            Edited here, one spec at a time — {categoryLabel(spec.category)} specs are not covered by Mass
+            Edit. Everything below is fully editable.
+            {spec.category_sections.length > 0 && (
+              <> Categorised by {spec.category_sections.join(" and ")}.</>
+            )}
+          </div>
+        </div>
+      )}
 
       {error && <div className="error banner">{error}</div>}
 
