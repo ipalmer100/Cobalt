@@ -4,11 +4,17 @@ import { commitEdits, getView } from "../api";
 import type { BatchEditItem, ViewRow } from "../types";
 import ColumnFilterMenu from "./ColumnFilterMenu";
 import RevisionPrompt from "./RevisionPrompt";
+import AutoTextarea from "./AutoTextarea";
+import { passesStatus, type StatusFilter } from "../specStatus";
 
 interface Props {
   section: string;
   refreshToken: number;
   who: string;
+  // Set in the sidebar, applied here too: it filters the vault, not one
+  // screen. Rows from a spec the filter excludes never reach the grid, so
+  // a fill or a mass edit cannot touch a spec that is out of scope.
+  status: StatusFilter;
 }
 
 type SortDir = "asc" | "desc";
@@ -221,7 +227,7 @@ interface DragState {
   currentIndex: number;
 }
 
-export default function MassEditGrid({ section, refreshToken, who }: Props) {
+export default function MassEditGrid({ section, refreshToken, who, status }: Props) {
   const [rows, setRows] = useState<ViewRow[]>([]);
   const [editable, setEditable] = useState(true);
   const [readonlyColumns, setReadonlyColumns] = useState<string[]>([]);
@@ -295,14 +301,35 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     return () => document.removeEventListener("click", onDocClick);
   }, [openFilterColumn]);
 
-  const columnIndex = useMemo(() => buildColumnIndex(rows), [rows]);
+  // The Active/Inactive filter is applied before anything else, including
+  // the column index -- a column that only the retired specs used should
+  // not be offered while they are hidden.
+  const inScopeRows = useMemo(
+    () => rows.filter((row) => passesStatus(status, root, row["File Path"] as string)),
+    [rows, status, root],
+  );
+
+  const columnIndex = useMemo(() => buildColumnIndex(inScopeRows), [inScopeRows]);
   const columns = showRareColumns ? columnIndex.allColumns : columnIndex.columns;
 
-  const filteredRows = useMemo(() => {
+  // Excel's rule: each column's filter narrows what the others can see.
+  // Filtering to one customer and then opening the Spec Number menu should
+  // offer that customer's spec numbers, not all 1,739 in the vault --
+  // otherwise the second filter is chosen against rows the first already
+  // removed, and picking one silently empties the grid.
+  const rowsPassingAllBut = useMemo(() => {
     const active = Object.entries(filters);
-    if (active.length === 0) return rows;
-    return rows.filter((row) => active.every(([col, allowed]) => allowed.has(cellText(row, col, columnIndex))));
-  }, [rows, filters, columnIndex]);
+    return (except: string | null) =>
+      active.length === 0
+        ? inScopeRows
+        : inScopeRows.filter((row) =>
+            active.every(
+              ([col, allowed]) => col === except || allowed.has(cellText(row, col, columnIndex)),
+            ),
+          );
+  }, [inScopeRows, filters, columnIndex]);
+
+  const filteredRows = useMemo(() => rowsPassingAllBut(null), [rowsPassingAllBut]);
 
   const sortedRows = useMemo(() => {
     if (!sortColumn) return filteredRows;
@@ -338,11 +365,16 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     return items;
   }, [sortedRows, groupByColumn, collapsedGroups, columnIndex]);
 
+  // Everything the open column could still show, given every *other*
+  // filter -- but not its own, so re-opening a filter you already set
+  // still lists the values you unchecked and lets you put them back.
   const distinctValuesForOpenColumn = useMemo(() => {
     if (!openFilterColumn) return [];
-    const set = new Set(rows.map((r) => cellText(r, openFilterColumn, columnIndex)));
+    const set = new Set(
+      rowsPassingAllBut(openFilterColumn).map((r) => cellText(r, openFilterColumn, columnIndex)),
+    );
     return Array.from(set).sort((a, b) => compareValues(a, b));
-  }, [rows, openFilterColumn, columnIndex]);
+  }, [rowsPassingAllBut, openFilterColumn, columnIndex]);
 
   const virtualizer = useVirtualizer({
     count: displayItems.length,
@@ -896,13 +928,12 @@ function EditableCellInput({ value, onFocus, onCommit }: EditableCellInputProps)
     setLocal(value);
   }, [value]);
 
-  const rows = Math.min(local.split("\n").length, 6);
-
   return (
-    <textarea
-      ref={ref}
+    <AutoTextarea
+      textareaRef={(el) => {
+        ref.current = el;
+      }}
       className="cell-editor"
-      rows={rows}
       value={local}
       onChange={(e) => {
         setLocal(e.target.value);

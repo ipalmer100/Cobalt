@@ -360,18 +360,13 @@ table.records-table.editable td:has(> textarea.cell-editor) {
   cursor: text;
 }
 
-/* The grid is the one place the trick is safe: the virtualizer measures and
-   pins each row's height, so `height: 100%` has something to resolve
-   against and the editor really does fill its cell. Scoped to
-   .mass-edit-scroll so Spec Detail, which has no such height, keeps sizing
-   its rows to their content. */
-.mass-edit-scroll table.records-table.editable td:has(> textarea.cell-editor) {
-  height: 0;
-}
-
-.mass-edit-scroll table.records-table.editable textarea.cell-editor {
-  height: 100%;
-}
+/* No `height: 0` / `height: 100%` pair here, though it is the usual trick
+   for filling a table cell. Percentage heights inside a table cell resolve
+   against a height the cell may not have, and where they resolved to zero
+   the editor vanished and took the value with it -- rows collapsed in Spec
+   Detail, and in the grid whole columns went blank on Edit. The editor
+   measures its own wrapped text instead (AutoTextarea) and the cell sizes
+   to it, which needs nothing from the layout and cannot collapse. */
 
 table.records-table.editable textarea.cell-editor:focus {
   outline: 1px solid var(--accent);

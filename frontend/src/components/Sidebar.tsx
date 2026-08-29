@@ -1,11 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { VaultEntry } from "../types";
+import { isInactive, type StatusFilter } from "../specStatus";
 
 interface Props {
   root: string;
   entries: VaultEntry[];
   selectedPath: string | null;
+  status: StatusFilter;
+  onStatusChange: (next: StatusFilter) => void;
   onSelect: (path: string) => void;
   onNewSpec: () => void;
   onChangeFolder: () => void;
@@ -38,24 +41,16 @@ function relativeFolder(root: string, path: string): string {
   return parts.join(" / ");
 }
 
-/**
- * Whether a spec is retired, read from the folder it lives in.
- *
- * Nothing inside the document says so -- the archive records it by filing
- * the spec under an "Inactive Specifications" folder, so that is what gets
- * read. Matched per path segment rather than against the whole path, so a
- * customer or file that happens to contain the word isn't swept up with
- * them.
- */
-function isInactive(root: string, path: string): boolean {
-  const normRoot = root.replace(/[\\/]+$/, "");
-  const rest = path.startsWith(normRoot) ? path.slice(normRoot.length) : path;
-  const parts = rest.split(/[\\/]/).filter(Boolean);
-  parts.pop(); // the filename is not a folder
-  return parts.some((part) => /(^|[^a-z])inactive([^a-z]|$)/i.test(part));
-}
-
-export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSpec, onChangeFolder }: Props) {
+export default function Sidebar({
+  root,
+  entries,
+  selectedPath,
+  status,
+  onStatusChange,
+  onSelect,
+  onNewSpec,
+  onChangeFolder,
+}: Props) {
   // A vault can have thousands of entries -- sorting with localeCompare on
   // every render (not just when entries actually change) was measurable at
   // that scale, on top of rendering every single one as a real DOM node
@@ -63,10 +58,9 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
   // the two: thousands of always-mounted buttons made the sidebar visibly
   // slow to render and scroll).
   const [query, setQuery] = useState("");
-  // Both on by default: the toggles are there to narrow the list when
-  // someone wants to, not to hide specs from anyone who hasn't asked.
-  const [showActive, setShowActive] = useState(true);
-  const [showInactive, setShowInactive] = useState(true);
+  // The Active/Inactive state lives in the app, not here: it filters the
+  // mass-edit grid too, so a spec hidden in one place is hidden in both.
+  const { showActive, showInactive } = status;
 
   const sorted = useMemo(
     () => [...entries].sort((a, b) => fileName(a.path).localeCompare(fileName(b.path))),
@@ -118,15 +112,15 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
         <div className="sidebar-status-filter">
           <button
             className={`status-toggle ${showActive ? "on" : ""}`}
-            onClick={() => setShowActive((v) => !v)}
-            title="Specs outside an Inactive folder"
+            onClick={() => onStatusChange({ showActive: !showActive, showInactive })}
+            title="Specs outside an Inactive folder — applies to Mass Edit too"
           >
             Active <span className="status-count">{sorted.length - inactiveCount}</span>
           </button>
           <button
             className={`status-toggle ${showInactive ? "on" : ""}`}
-            onClick={() => setShowInactive((v) => !v)}
-            title="Specs filed under an Inactive Specifications folder"
+            onClick={() => onStatusChange({ showActive, showInactive: !showInactive })}
+            title="Specs filed under an Inactive Specifications folder — applies to Mass Edit too"
           >
             Inactive <span className="status-count">{inactiveCount}</span>
           </button>

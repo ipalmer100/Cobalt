@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { commitEdits } from "../api";
 import RevisionPrompt from "./RevisionPrompt";
+import AutoTextarea from "./AutoTextarea";
 import type { BatchEditItem, SpecDetail as SpecDetailType, SpecSection } from "../types";
 
 interface Props {
@@ -200,9 +201,8 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
                           }
                           return (
                             <td key={c} className={changed ? "cell-dirty" : ""}>
-                              <textarea
+                              <AutoTextarea
                                 className="cell-editor"
-                                rows={Math.min(value.split("\n").length, 6)}
                                 value={value}
                                 onChange={(e) =>
                                   stage(
@@ -243,9 +243,8 @@ export default function SpecDetail({ spec, onChanged, defaultWho, who }: Props) 
                           {!editing || fieldLocked ? (
                             <span className={fieldLocked && editing ? "detail-locked" : ""}>{value || "—"}</span>
                           ) : (
-                            <textarea
+                            <AutoTextarea
                               className={`detail-editor${changed ? " dirty" : ""}`}
-                              rows={Math.min(shown.split("\n").length, 6)}
                               value={shown}
                               onChange={(e) =>
                                 stage(

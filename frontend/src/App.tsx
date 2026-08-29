@@ -9,6 +9,7 @@ import FolderPicker from "./components/FolderPicker";
 import ExceptionsView from "./components/ExceptionsView";
 import RevisionCheckView from "./components/RevisionCheckView";
 import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
+import type { StatusFilter } from "./specStatus";
 import "./App.css";
 
 type Mode = "detail" | "mass-edit" | "audit-log" | "exceptions" | "revision-check";
@@ -58,6 +59,13 @@ export default function App() {
   const [showNewSpec, setShowNewSpec] = useState(false);
   const [who, setWho] = useState(() => remembered(WHO_STORAGE_KEY) ?? "");
   const [pendingExceptions, setPendingExceptions] = useState(0);
+  // Active/Inactive is a filter on the vault, so it is held here and
+  // handed to every screen that lists specs -- hiding the retired ones in
+  // the sidebar has to hide their rows in Mass Edit too, or a mass edit
+  // quietly writes to specs the filter said were out of scope. Both on by
+  // default: the toggles narrow the view when asked, they don't hide
+  // anything from someone who hasn't touched them.
+  const [status, setStatus] = useState<StatusFilter>({ showActive: true, showInactive: true });
 
   function updateWho(value: string) {
     setWho(value);
@@ -208,6 +216,8 @@ export default function App() {
         root={root}
         entries={entries}
         selectedPath={selectedPath}
+        status={status}
+        onStatusChange={setStatus}
         onSelect={setSelectedPath}
         onNewSpec={() => setShowNewSpec(true)}
         onChangeFolder={() => {
@@ -288,7 +298,9 @@ export default function App() {
             <div className="empty-state">Select a spec from the sidebar.</div>
           ))}
 
-        {mode === "mass-edit" && <MassEditGrid section={selectedView} refreshToken={refreshToken} who={who} />}
+        {mode === "mass-edit" && (
+          <MassEditGrid section={selectedView} refreshToken={refreshToken} who={who} status={status} />
+        )}
 
         {mode === "audit-log" && <AuditLogView refreshToken={refreshToken} />}
 
