@@ -38,6 +38,23 @@ function relativeFolder(root: string, path: string): string {
   return parts.join(" / ");
 }
 
+/**
+ * Whether a spec is retired, read from the folder it lives in.
+ *
+ * Nothing inside the document says so -- the archive records it by filing
+ * the spec under an "Inactive Specifications" folder, so that is what gets
+ * read. Matched per path segment rather than against the whole path, so a
+ * customer or file that happens to contain the word isn't swept up with
+ * them.
+ */
+function isInactive(root: string, path: string): boolean {
+  const normRoot = root.replace(/[\\/]+$/, "");
+  const rest = path.startsWith(normRoot) ? path.slice(normRoot.length) : path;
+  const parts = rest.split(/[\\/]/).filter(Boolean);
+  parts.pop(); // the filename is not a folder
+  return parts.some((part) => /(^|[^a-z])inactive([^a-z]|$)/i.test(part));
+}
+
 export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSpec, onChangeFolder }: Props) {
   // A vault can have thousands of entries -- sorting with localeCompare on
   // every render (not just when entries actually change) was measurable at
@@ -46,22 +63,32 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
   // the two: thousands of always-mounted buttons made the sidebar visibly
   // slow to render and scroll).
   const [query, setQuery] = useState("");
+  // Both on by default: the toggles are there to narrow the list when
+  // someone wants to, not to hide specs from anyone who hasn't asked.
+  const [showActive, setShowActive] = useState(true);
+  const [showInactive, setShowInactive] = useState(true);
 
   const sorted = useMemo(
     () => [...entries].sort((a, b) => fileName(a.path).localeCompare(fileName(b.path))),
     [entries],
   );
 
+  const inactiveCount = useMemo(
+    () => sorted.filter((entry) => isInactive(root, entry.path)).length,
+    [sorted, root],
+  );
+
   // Search spec number, customer, file name and folder together: people look
   // for a spec by whichever of those they happen to know.
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return sorted;
-    return sorted.filter((entry) =>
-      [entry.spec_number, entry.customer, fileName(entry.path), relativeFolder(root, entry.path)]
-        .some((field) => (field ?? "").toLowerCase().includes(term)),
-    );
-  }, [sorted, query, root]);
+    return sorted.filter((entry) => {
+      if (!(isInactive(root, entry.path) ? showInactive : showActive)) return false;
+      if (!term) return true;
+      return [entry.spec_number, entry.customer, fileName(entry.path), relativeFolder(root, entry.path)]
+        .some((field) => (field ?? "").toLowerCase().includes(term));
+    });
+  }, [sorted, query, root, showActive, showInactive]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -87,7 +114,25 @@ export default function Sidebar({ root, entries, selectedPath, onSelect, onNewSp
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-      {query.trim() !== "" && (
+      {inactiveCount > 0 && (
+        <div className="sidebar-status-filter">
+          <button
+            className={`status-toggle ${showActive ? "on" : ""}`}
+            onClick={() => setShowActive((v) => !v)}
+            title="Specs outside an Inactive folder"
+          >
+            Active <span className="status-count">{sorted.length - inactiveCount}</span>
+          </button>
+          <button
+            className={`status-toggle ${showInactive ? "on" : ""}`}
+            onClick={() => setShowInactive((v) => !v)}
+            title="Specs filed under an Inactive Specifications folder"
+          >
+            Inactive <span className="status-count">{inactiveCount}</span>
+          </button>
+        </div>
+      )}
+      {(query.trim() !== "" || !showActive || !showInactive) && (
         <div className="sidebar-search-count">
           {filtered.length} of {sorted.length}
         </div>

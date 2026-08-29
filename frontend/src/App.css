@@ -333,11 +333,11 @@ table.records-table.editable td.saving {
    bare `input` selector here also caught the filter menu's search box and
    its checkboxes, which live inside a <th> of this same table. */
 table.records-table.editable textarea.cell-editor {
-  /* Fills the cell, so clicking anywhere in it starts editing rather than
-     only landing on the glyphs. The td drops its own padding and the
-     editor carries it instead, so there is no dead border to click into. */
+  /* Fills the cell's width and carries the padding the td gave up, so
+     there is no dead border to click into. Height is left to the `rows`
+     attribute: forcing `height: 100%` needs a row height that is already
+     fixed, and demanding one collapsed every row in Spec Detail. */
   width: 100%;
-  height: 100%;
   box-sizing: border-box;
   border: none;
   background: transparent;
@@ -346,15 +346,31 @@ table.records-table.editable textarea.cell-editor {
   padding: 3px 4px;
 }
 
-/* An editable cell is all editor -- see above. `height: 0` is the table
-   trick that makes the child's `height: 100%` resolve against the row's
-   real height instead of being ignored: rows still size to their tallest
-   cell, but a one-line editor in a five-line row stretches to fill rather
-   than leaving dead space below it that clicks fall into. */
+/* An editable cell is all editor -- see above.
+   No `height: 0` here, though it is the usual trick for making a child's
+   `height: 100%` resolve inside a table. It only behaves where something
+   else already fixes the row height, as the virtualizer does in the
+   mass-edit grid. In Spec Detail nothing does, so every row collapsed to
+   nothing the moment Edit was pressed and the whole spec became
+   unreadable. Rows size to their content instead, and clicking the slack
+   area of a cell is handled in JS (see GridRow's onClick), which works
+   regardless of how the row got its height. */
 table.records-table.editable td:has(> textarea.cell-editor) {
   padding: 0;
-  height: 0;
   cursor: text;
+}
+
+/* The grid is the one place the trick is safe: the virtualizer measures and
+   pins each row's height, so `height: 100%` has something to resolve
+   against and the editor really does fill its cell. Scoped to
+   .mass-edit-scroll so Spec Detail, which has no such height, keeps sizing
+   its rows to their content. */
+.mass-edit-scroll table.records-table.editable td:has(> textarea.cell-editor) {
+  height: 0;
+}
+
+.mass-edit-scroll table.records-table.editable textarea.cell-editor {
+  height: 100%;
 }
 
 table.records-table.editable textarea.cell-editor:focus {
@@ -1532,4 +1548,57 @@ textarea.detail-editor.dirty {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--error);
+}
+
+/* Active / Inactive, read from the folder a spec is filed under. */
+.sidebar-status-filter {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px 0;
+}
+
+.status-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* An "off" toggle has to read as off at a glance, since the consequence is
+   specs missing from the list. */
+.status-toggle.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.status-toggle:not(.on) {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.status-count {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* The escape hatch for headings only a few specs carry -- usually a
+   mis-read header row, occasionally a real column one plant uses. */
+.grid-rare-columns {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
 }

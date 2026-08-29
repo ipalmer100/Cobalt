@@ -54,12 +54,17 @@ function normalizeColumn(name: string): string {
 type ColumnRef = { index: number; label: string };
 
 interface ColumnIndex {
+  /** What the grid shows by default: columns most specs actually use. */
   columns: string[];
+  /** Every column found anywhere, including the rare ones. */
+  allColumns: string[];
+  /** How many `allColumns` are held back from `columns`. */
+  rareCount: number;
   /** Per row (keyed on its immutable _source), the layout of its table. */
   refs: WeakMap<object, Map<string, ColumnRef>>;
 }
 
-const EMPTY_INDEX: ColumnIndex = { columns: [], refs: new WeakMap() };
+const EMPTY_INDEX: ColumnIndex = { columns: [], allColumns: [], rareCount: 0, refs: new WeakMap() };
 
 function refFor(index: ColumnIndex, row: ViewRow, column: string): ColumnRef | undefined {
   return index.refs.get(row._source as unknown as object)?.get(normalizeColumn(column));
@@ -119,6 +124,16 @@ function compareValues(a: string, b: string): number {
  * and keep genuinely different headings as their own columns rather than
  * guessing they mean the same thing.
  *
+ * Scanning everything brought its own problem at real scale, though. In a
+ * few specs per thousand the parser locks onto a *data* row as the header,
+ * so "PASS", "Every MR" and "On Floor, QC-SOP-052" arrived as column names,
+ * alongside the "Column 2" and "Target (2)" placeholders that blank and
+ * repeated headings produce. Ten real columns became twenty-four, and the
+ * grid was unusable. So a column has to be one a reasonable share of specs
+ * actually populates before it is shown by default; the rest stay
+ * addressable and one click away rather than being dropped, because a
+ * genuinely rare column is not the same thing as a misparse.
+ *
  * Cost is one pass per *fetch*, not per render -- an edit patches row values
  * but never the table layouts, so the result is cached against the row's
  * `_source`, which patching preserves.
@@ -134,11 +149,29 @@ function buildColumnIndex(rows: ViewRow[]): ColumnIndex {
   const byLayout = new Map<string, Map<string, ColumnRef>>();
   const display = new Map<string, string>();
   const order: string[] = [];
+  // Which specs actually put a value in each column, and how many specs
+  // there are to compare that against.
+  const specsWithValue = new Map<string, Set<string>>();
+  const allSpecs = new Set<string>();
 
   for (const row of rows) {
     const source = row._source as unknown as object;
-    if (refs.has(source)) continue;
+    const path = row["File Path"] as string;
+    allSpecs.add(path);
+
     const keys = row._source.header_row ?? Object.keys(row).filter((k) => k !== "_source");
+    for (const label of keys) {
+      const norm = normalizeColumn(label);
+      if (skip.has(norm)) continue;
+      // Presence isn't enough: a placeholder column that is blank in every
+      // spec that nominally has it is exactly the noise being filtered.
+      if (!(row[label] as string | undefined)?.trim()) continue;
+      let carriers = specsWithValue.get(norm);
+      if (!carriers) specsWithValue.set(norm, (carriers = new Set()));
+      carriers.add(path);
+    }
+
+    if (refs.has(source)) continue;
     // JSON, not a join: a separator character could occur inside a
     // heading and make two different layouts look identical.
     const signature = JSON.stringify(keys);
@@ -163,7 +196,21 @@ function buildColumnIndex(rows: ViewRow[]): ColumnIndex {
     refs.set(source, layout);
   }
 
-  return { columns: [...META_PREFIX, ...order.map((n) => display.get(n)!), ...trailing], refs };
+  // A tenth of the specs. Deliberately proportional: in a small vault the
+  // threshold lands at one spec, so nothing is hidden and a genuinely
+  // different heading like "Designation" still shows. In a large one a
+  // heading found in a handful of specs is a misparse, and stays out of
+  // the way until asked for.
+  const minSpecs = Math.max(1, Math.ceil(allSpecs.size * 0.1));
+  const common = order.filter((norm) => (specsWithValue.get(norm)?.size ?? 0) >= minSpecs);
+
+  const dress = (names: string[]) => [...META_PREFIX, ...names.map((n) => display.get(n)!), ...trailing];
+  return {
+    columns: dress(common),
+    allColumns: dress(order),
+    rareCount: order.length - common.length,
+    refs,
+  };
 }
 
 interface DragState {
@@ -198,6 +245,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
   const [filters, setFilters] = useState<Record<string, Set<string>>>({});
   const [openFilterColumn, setOpenFilterColumn] = useState<string | null>(null);
   const [groupByColumn, setGroupByColumn] = useState<string | null>(null);
+  const [showRareColumns, setShowRareColumns] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [activeCell, setActiveCell] = useState<{ key: string; column: string } | null>(null);
   const [dragging, setDragging] = useState<DragState | null>(null);
@@ -231,6 +279,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
     setFilters({});
     setGroupByColumn(null);
     setCollapsedGroups(new Set());
+    setShowRareColumns(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [section]);
 
@@ -247,7 +296,7 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
   }, [openFilterColumn]);
 
   const columnIndex = useMemo(() => buildColumnIndex(rows), [rows]);
-  const columns = columnIndex.columns;
+  const columns = showRareColumns ? columnIndex.allColumns : columnIndex.columns;
 
   const filteredRows = useMemo(() => {
     const active = Object.entries(filters);
@@ -553,6 +602,20 @@ export default function MassEditGrid({ section, refreshToken, who }: Props) {
           >
             Reset view
           </button>
+        )}
+        {columnIndex.rareCount > 0 && (
+          <label className="grid-rare-columns" title={
+            showRareColumns
+              ? "Hide columns only a few specs use"
+              : "Headings only a handful of specs carry. Usually a mis-read header row, occasionally a real column one plant uses."
+          }>
+            <input
+              type="checkbox"
+              checked={showRareColumns}
+              onChange={(e) => setShowRareColumns(e.target.checked)}
+            />
+            Show {columnIndex.rareCount} rare {columnIndex.rareCount === 1 ? "column" : "columns"}
+          </label>
         )}
         <span className="grid-row-count">{sortedRows.length} rows</span>
       </div>
