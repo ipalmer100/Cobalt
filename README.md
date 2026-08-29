@@ -293,6 +293,44 @@ Worth running once over any folder edited by a Cobalt build before
 Revision History without checking whether the row carried one, so a spec
 whose table ends in a blank row was revised from `4` to `01`.
 
+## Describing a library without exporting it
+
+Cobalt's parsing bugs are shape bugs — a data row read as a header, a
+merged banner that leaves every column unmapped, a section worded
+differently in one plant's template. Finding them needs the skeleton of a
+large real library, and none of it needs a single cell value.
+
+```
+cd backend
+python -m cobalt.structure_export "/path/to/specs" --out cobalt-structure.json
+```
+
+It writes two files:
+
+| File | Contents | Send it? |
+| --- | --- | --- |
+| `cobalt-structure.json` | Section headings as written, table shapes, column and field labels, column/row counts, how many specs share each layout, per-column fill rates and text lengths | Yes — this is the one to share |
+| `cobalt-structure-local-map.json` | Which hashed id is which file | **No** — it names your files; it exists so you can trace a finding back locally |
+
+Every cell value is excluded, and so is every path: specs are identified by
+a hash of their location, stable between runs. Even the error text for an
+unreadable file is scrubbed of anything path-shaped, because python-docx
+reports a bad file by quoting its full path.
+
+Specs are grouped by identical layout, so a library of thousands collapses
+to a few dozen entries — a 120-spec vault produces 7 KB. The groups are the
+useful part: a template used by 1,200 specs and a one-off used by three sit
+side by side, and the one-offs are usually where the parser went wrong.
+
+`suspect_labels` lists column names that read like data rather than
+headers — empty header cells (`Column 2`), the same text repeated across
+columns (`Target (2)`), placeholders (`--`). Those are the misparsed
+tables, and they are also the one route by which content can reach the
+report: where a header was mis-detected, the "labels" really are that
+spec's data. Worth reading that section before sending the file on.
+
+`--limit N` stops after N specs, for a quick sample.
+
 ## Testing
 
 ```

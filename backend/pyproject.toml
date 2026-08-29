@@ -27,6 +27,8 @@ cobalt = ["templates/*.docx"]
 
 [project.scripts]
 cobalt-desktop = "cobalt.desktop:main"
+cobalt-check-revisions = "cobalt.revision_audit:main"
+cobalt-export-structure = "cobalt.structure_export:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
