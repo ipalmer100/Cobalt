@@ -202,13 +202,29 @@ function buildColumnIndex(rows: ViewRow[]): ColumnIndex {
     refs.set(source, layout);
   }
 
-  // A tenth of the specs. Deliberately proportional: in a small vault the
-  // threshold lands at one spec, so nothing is hidden and a genuinely
-  // different heading like "Designation" still shows. In a large one a
-  // heading found in a handful of specs is a misparse, and stays out of
-  // the way until asked for.
-  const minSpecs = Math.max(1, Math.ceil(allSpecs.size * 0.1));
-  const common = order.filter((norm) => (specsWithValue.get(norm)?.size ?? 0) >= minSpecs);
+  // Which columns are real, and which are a misparsed spec's data.
+  //
+  // Measured against a 1,811-spec library rather than guessed. The two
+  // populations separate cleanly there, but not where a first attempt at
+  // this put the line: a column carried by a tenth of the specs. Real
+  // columns from a minority template sit well under that -- "Feet /
+  // Pallet" in 178 specs, "Melt Index" and "Density g/cm3" in 136,
+  // "Designation" in 31 -- while the misparsed labels ("PASS", "--",
+  // "Every MR", "Column 2") never exceed 8. A tenth would have hidden
+  // every one of the real ones.
+  //
+  // So the line is a hundredth, which lands between the two, and nothing
+  // is hidden at all below 25 specs: at that size every column is worth
+  // seeing, and one spec with an unusual heading is not yet noise.
+  const total = allSpecs.size;
+  const minSpecs = total < 25 ? 0 : Math.max(2, Math.ceil(total * 0.01));
+  const common = order.filter(
+    // "Column 4" is not a column name -- it is what the parser writes when
+    // the header cell is empty, so two specs' "Column 4" are not the same
+    // column and counting them together says nothing. Never common, always
+    // reachable through the rare-columns toggle.
+    (norm) => !/^column \d+$/.test(norm) && (specsWithValue.get(norm)?.size ?? 0) >= minSpecs,
+  );
 
   const dress = (names: string[]) => [...META_PREFIX, ...names.map((n) => display.get(n)!), ...trailing];
   return {
