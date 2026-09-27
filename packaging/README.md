@@ -162,6 +162,52 @@ window (or Ctrl+C in it) stops the app; double-clicking the exe again
 while it's already running just refocuses your browser instead of
 erroring out.
 
+## Running it on a managed PC
+
+On a corporate laptop the first launch may be blocked, and the two ways it
+gets blocked have different fixes. Work out which one you are seeing before
+trying anything:
+
+| What you see | What it is | What fixes it |
+| --- | --- | --- |
+| "Windows protected your PC" with a **Run anyway** under *More info* | SmartScreen, because the exe is unsigned and new | Click through once; Windows remembers. Or sign it. |
+| A prompt for an **administrator password** | Windows decided the exe needs elevation | The manifest below; failing that, IT policy |
+| Nothing happens, or "blocked by your administrator" | AppLocker / WDAC policy refusing unsigned code | Only IT can fix this — see below |
+
+Cobalt has never needed administrator rights: it reads and writes spec
+documents as whoever runs it, and stores its own state inside the vault
+folder. If Windows is asking for an admin password, it is guessing, and
+`packaging/cobalt.manifest` exists to stop it guessing. Without an explicit
+manifest, Windows applies *installer detection* to unsigned executables —
+it inspects the binary and silently marks anything that looks like a setup
+program as requiring elevation. The manifest declares `asInvoker`, which
+turns that off for this binary, and `version_info.txt` stamps real
+publisher metadata so Explorer and SmartScreen have something to name.
+
+Both ship in the build. If you built before they existed, rebuild.
+
+**If it is still blocked, it is policy, and only IT can lift it.** What to
+ask for, cheapest first:
+
+1. **Run it from a user-writable folder** — `%USERPROFILE%\Cobalt\`, not
+   `C:\Program Files\`. Some policies only restrict protected locations,
+   and this costs nothing to try.
+2. **An AppLocker path exception** for that folder, or a **hash rule** for
+   `Cobalt.exe`. A hash rule is precise but has to be reissued on every
+   rebuild, so ask for the path rule if they will give you one.
+3. **A code-signing certificate.** This is the real fix and the only one
+   that scales past a pilot: a signed binary satisfies SmartScreen,
+   satisfies publisher-based AppLocker rules, and needs no per-machine
+   exception. Organisations that distribute internal tools usually already
+   have one. Signing is a single command added to the end of the build
+   (`signtool sign /fd sha256 /tr <timestamp-url> /td sha256 ...`).
+
+Ask for 3 if you are going past a handful of users. Options 1 and 2 are
+fine for a pilot and a demo.
+
+Do not ask anyone to disable SmartScreen or Defender. It is not necessary
+for any of the above, and it is the kind of request that ends a pilot.
+
 ## Setting up a demo copy
 
 For showing this to people, run against a **copy** of a handful of specs,

@@ -8,6 +8,7 @@ import AuditLogView from "./components/AuditLogView";
 import FolderPicker from "./components/FolderPicker";
 import ExceptionsView from "./components/ExceptionsView";
 import RevisionCheckView from "./components/RevisionCheckView";
+import ThemeToggle from "./components/ThemeToggle";
 import type { SpecDetail as SpecDetailType, VaultEntry, ViewMeta } from "./types";
 import type { StatusFilter } from "./specStatus";
 import { isMassEditable, type CategoryFilter } from "./specCategory";
@@ -164,6 +165,13 @@ export default function App() {
   if (!root) {
     return (
       <div className="open-vault-screen">
+        {/* Also here, not only once a vault is open: this is the first
+            screen anyone sees, it is fully themed, and being unable to
+            change the appearance until after committing to a folder is a
+            strange place to put the control. */}
+        <div className="open-vault-corner">
+          <ThemeToggle />
+        </div>
         <img className="app-mark" src="/cobalt-icon.svg" alt="" width={128} height={128} />
         <h1>Cobalt</h1>
         <p className="open-vault-tagline">Every customer spec in one place, live.</p>
@@ -282,6 +290,7 @@ export default function App() {
               ))}
             </select>
           )}
+          <ThemeToggle />
           <input
             className="who-input"
             placeholder="Your name (for the audit log)"

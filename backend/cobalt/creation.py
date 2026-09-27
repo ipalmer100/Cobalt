@@ -17,7 +17,7 @@ import shutil
 from datetime import date as date_cls
 from pathlib import Path
 
-from .docx_sections import PRODUCT_DESCRIPTION, parse_document
+from .docx_sections import PRODUCT_DESCRIPTION, SPEC_NUMBER_LABELS, parse_document
 from .docx_writer import append_row, clear_records, write_field_value
 from .models import Spec
 
@@ -28,10 +28,47 @@ class CreationError(RuntimeError):
     pass
 
 
+def _spec_number_label(pd_fields: dict[str, str]) -> str | None:
+    """Which label *this* document uses for our own spec number.
+
+    Not every spec says "Spec #". Ones written before the Sonoco->Toppan
+    rename say "Sonoco Spec #", and a post-rename spec could say "Toppan
+    Spec #" -- the reader has always known that, and the writer did not.
+    Writing to a hardcoded "Spec #" simply found nothing on those specs and
+    reported success, so duplicating one produced a new document still
+    carrying the source's spec number: a spec claiming to be another spec.
+    Mirrors the reader's resolution so the two cannot disagree.
+    """
+    for label in SPEC_NUMBER_LABELS:
+        if label in pd_fields:
+            return label
+    for label in pd_fields:
+        lowered = label.strip().lower()
+        # "Customer Spec #" is the customer's number, not ours.
+        if lowered.endswith("spec #") and not lowered.startswith("customer"):
+            return label
+    return None
+
+
 def _reset_new_spec_identity(path: str, spec_number: str, customer: str, who: str, note: str) -> None:
     today = date_cls.today().strftime("%m/%d/%Y")
-    write_field_value(path, PRODUCT_DESCRIPTION, "Spec #", spec_number)
-    write_field_value(path, PRODUCT_DESCRIPTION, "Customer", customer)
+
+    pd_fields = parse_document(path).primary(PRODUCT_DESCRIPTION).fields()
+    label = _spec_number_label(pd_fields)
+    if label is None:
+        raise CreationError(
+            "Product Description has no spec-number field, so the new spec cannot be "
+            "given its own number. Add a \"Spec #:\" field to the source document first."
+        )
+
+    # Identity, not decoration: a new spec that silently kept the source's
+    # number or customer is worse than one that was never created.
+    for field, value in ((label, spec_number), ("Customer", customer)):
+        if not write_field_value(path, PRODUCT_DESCRIPTION, field, value):
+            raise CreationError(f'Could not set "{field}" on the new spec.')
+
+    # Cosmetic by comparison -- absent on some templates, and not worth
+    # refusing to create a spec over.
     write_field_value(path, PRODUCT_DESCRIPTION, "Date of Issue", today)
     write_field_value(path, PRODUCT_DESCRIPTION, "Revision #", "01")
     clear_records(path, "Revision History")

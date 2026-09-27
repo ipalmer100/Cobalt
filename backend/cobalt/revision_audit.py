@@ -158,6 +158,12 @@ def check_spec(spec: Spec) -> list[Finding]:
     # whoever fixes it that 4 was already issued.
     highest = max([*[v for _, v in numbered], stated], key=numeric)
 
+    # What the next save will actually continue from. The writer takes the
+    # last numbered row of Revision History and nothing else, so this has
+    # to be that same value -- a checker that predicts a different number
+    # than the writer produces is worse than no checker.
+    continues = history_last
+
     # Numbers that go backwards or repeat: the signature of a spec already
     # damaged by the old behaviour, or of two people revising in parallel.
     previous_value, previous_row = None, None
@@ -170,10 +176,12 @@ def check_spec(spec: Spec) -> list[Finding]:
                     number,
                     "out_of_sequence",
                     f'Revision History row {row_index + 1} is "{value}" after "{previous_row}" — '
-                    f"the numbering {'repeats' if current == previous_value else 'goes backwards'}.",
+                    f"the numbering {'repeats' if current == previous_value else 'goes backwards'}. "
+                    f'The highest number this spec has carried is "{highest}", so continuing from '
+                    f'the end of the table will reissue numbers that were already used.',
                     stated=stated,
                     history_last=history_last,
-                    continues_from=highest,
+                    continues_from=continues,
                 )
             )
         previous_value, previous_row = current, value
@@ -185,10 +193,11 @@ def check_spec(spec: Spec) -> list[Finding]:
                 number,
                 "mismatch",
                 f'Product Description says revision "{stated}" but the last Revision History '
-                f'row says "{history_last}".',
+                f'row says "{history_last}". Revision History is authoritative, so the next save '
+                f'corrects Product Description to match it.',
                 stated=stated,
                 history_last=history_last,
-                continues_from=highest,
+                continues_from=continues,
             )
         )
 

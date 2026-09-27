@@ -103,6 +103,14 @@ exe = EXE(
     # `python packaging/make_icon.py` if the mark changes; ignored on
     # non-Windows builds, so it's safe to leave set unconditionally.
     icon=str(Path(SPECPATH) / "cobalt.ico"),  # noqa: F821
+    # Windows-only, ignored on other platforms (same as `icon` above).
+    # The manifest declares asInvoker so Windows stops guessing that an
+    # unsigned binary might be an installer and demanding elevation; the
+    # version resource gives Explorer, SmartScreen and any AppLocker rule a
+    # real publisher to name instead of a blank. Neither makes the exe
+    # trusted -- see packaging/README.md, "Running it on a managed PC".
+    manifest=str(Path(SPECPATH) / "cobalt.manifest"),  # noqa: F821
+    version=str(Path(SPECPATH) / "version_info.txt"),  # noqa: F821
 )
 
 coll = COLLECT(

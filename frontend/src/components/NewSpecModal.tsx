@@ -19,12 +19,25 @@ export default function NewSpecModal({ root, entries, onCreated, onClose, defaul
   const supported = entries.filter((e) => e.supported);
   const [mode, setMode] = useState<"duplicate" | "blank">(supported.length > 0 ? "duplicate" : "blank");
   const [sourcePath, setSourcePath] = useState(supported[0]?.path ?? "");
+  // A flat dropdown is fine for a dozen specs and useless for eighteen
+  // hundred, which is what a real library holds -- duplicating a spec means
+  // finding one specific document, so the picker has to be searchable.
+  const [sourceQuery, setSourceQuery] = useState("");
   const [specNumber, setSpecNumber] = useState("");
   const [customer, setCustomer] = useState("");
   const [who, setWho] = useState(defaultWho);
   const [destFolder, setDestFolder] = useState(root);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const term = sourceQuery.trim().toLowerCase();
+  const matches = term
+    ? supported.filter((e) =>
+        [e.spec_number, e.customer, e.path.split(/[\\/]/).pop()].some((f) =>
+          (f ?? "").toLowerCase().includes(term),
+        ),
+      )
+    : supported;
 
   async function submit() {
     if (!specNumber.trim() || !customer.trim() || !who.trim()) {
@@ -36,8 +49,8 @@ export default function NewSpecModal({ root, entries, onCreated, onClose, defaul
     setError(null);
     try {
       if (mode === "duplicate") {
-        if (!sourcePath) {
-          setError("Choose a spec to duplicate.");
+        if (!sourcePath || !matches.some((e) => e.path === sourcePath)) {
+          setError("Choose a spec to duplicate from the list.");
           setBusy(false);
           return;
         }
@@ -70,20 +83,35 @@ export default function NewSpecModal({ root, entries, onCreated, onClose, defaul
         {mode === "duplicate" && (
           <label className="modal-field">
             Duplicate from
+            <input
+              className="source-search"
+              value={sourceQuery}
+              onChange={(e) => setSourceQuery(e.target.value)}
+              placeholder="Search spec # or customer…"
+            />
             <select
+              className="source-list"
+              size={Math.min(8, Math.max(2, matches.length))}
               value={sourcePath}
               onChange={(e) => {
                 setSourcePath(e.target.value);
+                // Sensible default: a new spec usually belongs beside the
+                // one it was copied from.
                 setDestFolder(dirOf(e.target.value));
               }}
             >
-              {supported.map((e) => (
+              {matches.map((e) => (
                 <option key={e.path} value={e.path}>
                   {e.spec_number} — {e.customer}
                 </option>
               ))}
             </select>
-            <span className="modal-hint">Data tables carry over as a starting point; Spec #, Customer, and Revision History reset.</span>
+            <span className="modal-hint">
+              {term
+                ? `${matches.length} of ${supported.length} specs match`
+                : `${supported.length} spec${supported.length === 1 ? "" : "s"} to choose from`}
+              . Data tables carry over as a starting point; Spec #, Customer, and Revision History reset.
+            </span>
           </label>
         )}
 

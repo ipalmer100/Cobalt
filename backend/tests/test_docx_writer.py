@@ -352,9 +352,10 @@ def test_revision_number_survives_a_trailing_blank_history_row(tmp_path):
     assert not any(all(c == "" for c in r) for r in rows), "no blank row left in the trail"
 
 
-def test_revision_number_continues_from_whichever_source_is_ahead(tmp_path):
-    """If Product Description and the history disagree, one of them missed a
-    revision -- continuing from the lower would reissue a used number."""
+def test_revision_number_continues_from_the_history_table(tmp_path):
+    """Revision History is the audit trail, so it decides the next number
+    and Product Description is corrected to match -- whichever of the two
+    happens to be ahead."""
     from docx import Document as Doc
 
     from cobalt.docx_writer import apply_revision
@@ -362,10 +363,73 @@ def test_revision_number_continues_from_whichever_source_is_ahead(tmp_path):
     path = str(tmp_path / "spec.docx")
     build_sample_spec_docx(path, revision="09")
 
-    # History left behind at 02 while the stated revision moved on to 09.
+    # History left behind at 02 while the stated revision says 09.
     doc = Doc(path)
     rev_index = parse_document(path).primary("Revision History").table_index
     doc.tables[rev_index].rows[1].cells[0].text = "02"
     doc.save(path)
 
-    assert apply_revision(path, "Isaac", "Catching up.") == "10"
+    assert apply_revision(path, "Isaac", "Catching up.") == "03"
+    after = parse_document(path)
+    assert after.revision_number == "03", "Product Description follows the table"
+
+
+def test_a_revision_row_removed_by_hand_does_not_skip_a_number(tmp_path):
+    """The reported case. Someone deletes a Revision History row in Word --
+    undoing a change that was never released -- and leaves the stated
+    revision alone. Taking the higher of the two used to issue 14 where the
+    audit trail said 13, leaving a permanent gap in a regulated document."""
+    from docx import Document as Doc
+
+    from cobalt.docx_writer import apply_revision
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path, revision="13")
+
+    doc = Doc(path)
+    rev_index = parse_document(path).primary("Revision History").table_index
+    doc.tables[rev_index].rows[1].cells[0].text = "12"
+    doc.save(path)
+
+    assert apply_revision(path, "Isaac", "Next change.") == "13"
+    assert parse_document(path).revision_number == "13"
+
+
+def test_a_mismatched_spec_is_healed_rather_than_driven_further_apart(tmp_path):
+    """Both sources end up on the same number, and no number is skipped."""
+    from docx import Document as Doc
+
+    from cobalt.docx_writer import apply_revision
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path, revision="14")
+
+    doc = Doc(path)
+    rev_index = parse_document(path).primary("Revision History").table_index
+    doc.tables[rev_index].rows[1].cells[0].text = "13"
+    doc.save(path)
+
+    assert apply_revision(path, "Isaac", "Next change.") == "14"
+    after = parse_document(path)
+    history = after.primary("Revision History")
+    assert after.revision_number == history.rows[-1][0].strip() == "14"
+
+
+def test_the_header_is_used_only_when_the_history_carries_no_number(tmp_path):
+    """A history with nothing numbered in it -- emptied, or never revised --
+    is the one case where the stated revision is all there is to go on."""
+    from docx import Document as Doc
+
+    from cobalt.docx_writer import apply_revision
+
+    path = str(tmp_path / "spec.docx")
+    build_sample_spec_docx(path, revision="07")
+
+    doc = Doc(path)
+    rev_index = parse_document(path).primary("Revision History").table_index
+    for row in doc.tables[rev_index].rows[1:]:
+        for cell in row.cells:
+            cell.text = ""
+    doc.save(path)
+
+    assert apply_revision(path, "Isaac", "Resuming.") == "08"

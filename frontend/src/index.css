@@ -1,5 +1,6 @@
 :root {
-  color-scheme: light dark;
+  /* color-scheme is set in App.css, where the theme tokens live, so the
+     two can't disagree about which theme is in force. */
   font: 14px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
 }
 

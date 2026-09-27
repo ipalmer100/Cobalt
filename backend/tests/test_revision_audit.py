@@ -63,9 +63,11 @@ def test_flags_a_stated_revision_that_disagrees_with_the_history(tmp_path):
     finding = next(f for f in check_spec(parse_document(path)) if f.kind == "mismatch")
     assert finding.stated == "09"
     assert finding.history_last == "02"
-    # Reported, not corrected -- but it says where a save would resume, so
-    # whoever owns the spec can see the consequence of leaving it as is.
-    assert finding.continues_from == "09"
+    # Reported, not corrected -- but it says where a save would resume, and
+    # that has to be what the writer will really do: Revision History wins,
+    # so the next revision is 03 and Product Description is corrected to it.
+    assert finding.continues_from == "02"
+    assert "authoritative" in finding.detail
 
 
 def test_flags_a_trailing_blank_history_row(tmp_path):
@@ -169,4 +171,9 @@ def test_a_spec_renumbered_down_to_01_is_told_what_was_already_issued(tmp_path):
     findings = check_spec(parse_document(path))
     assert not any(f.kind == "mismatch" for f in findings), "the two sources do agree"
     out = next(f for f in findings if f.kind == "out_of_sequence")
-    assert out.continues_from == "4", out.continues_from
+    # What a save would really do -- continue from the end of the table.
+    assert out.continues_from == "01", out.continues_from
+    # ...which is precisely the danger, so the finding has to say that 4 was
+    # already issued rather than leaving it to be rediscovered.
+    assert '"4"' in out.detail, out.detail
+    assert "already used" in out.detail, out.detail

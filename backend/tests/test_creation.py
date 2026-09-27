@@ -77,3 +77,65 @@ def test_created_specs_creates_missing_parent_directories(tmp_path):
 
     reparsed = parse_document(dest)
     assert reparsed.customer == "Another Co"
+
+
+def test_a_spec_labelled_sonoco_spec_gets_its_own_number(tmp_path):
+    """Specs written before the Sonoco->Toppan rename label the field
+    "Sonoco Spec #". The writer only ever looked for "Spec #", found
+    nothing, and reported success -- so duplicating one of those produced a
+    new document still carrying the source spec's number."""
+    from docx import Document
+
+    source = tmp_path / "source.docx"
+    build_sample_spec_docx(str(source), spec_number="EG1007")
+
+    doc = Document(str(source))
+    header = doc.sections[0].header.tables[0]
+    for row in header.rows:
+        for cell in row.cells:
+            if cell.text.strip().rstrip(":").strip().lower() == "spec #":
+                cell.text = "Sonoco Spec #:"
+    doc.save(str(source))
+    assert parse_document(str(source)).spec_number == "EG1007"
+
+    dest = tmp_path / "new.docx"
+    created = duplicate_spec(str(source), str(dest), "EG9001", "NEW CUSTOMER LTD", "Isaac")
+
+    assert created.spec_number == "EG9001", "the new spec must not keep the source's number"
+    assert created.customer == "NEW CUSTOMER LTD"
+    assert parse_document(str(dest)).spec_number == "EG9001"
+
+
+def test_a_toppan_labelled_spec_works_the_same_way(tmp_path):
+    from docx import Document
+
+    source = tmp_path / "source.docx"
+    build_sample_spec_docx(str(source), spec_number="EG1008")
+    doc = Document(str(source))
+    for row in doc.sections[0].header.tables[0].rows:
+        for cell in row.cells:
+            if cell.text.strip().rstrip(":").strip().lower() == "spec #":
+                cell.text = "Toppan Spec #:"
+    doc.save(str(source))
+
+    dest = tmp_path / "new.docx"
+    assert duplicate_spec(str(source), str(dest), "EG9002", "ACME", "Isaac").spec_number == "EG9002"
+
+
+def test_creation_refuses_rather_than_produce_a_spec_with_the_wrong_number(tmp_path):
+    """No spec-number field at all: better to refuse than to hand someone a
+    document that claims to be the spec it was copied from."""
+    from docx import Document
+
+    source = tmp_path / "source.docx"
+    build_sample_spec_docx(str(source), spec_number="EG1009")
+    doc = Document(str(source))
+    for row in doc.sections[0].header.tables[0].rows:
+        for cell in row.cells:
+            if cell.text.strip().rstrip(":").strip().lower() == "spec #":
+                cell.text = "Reference:"
+    doc.save(str(source))
+
+    dest = tmp_path / "new.docx"
+    with pytest.raises(CreationError, match="spec-number field"):
+        duplicate_spec(str(source), str(dest), "EG9003", "ACME", "Isaac")

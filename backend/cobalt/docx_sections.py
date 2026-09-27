@@ -450,6 +450,12 @@ def extract_product_description(doc: Document) -> ParsedTable:
     )
 
 
+# The labels a spec may use for our own number, best first. Shared with
+# creation.py so the reader and the writer can't disagree about which field
+# holds it.
+SPEC_NUMBER_LABELS = ("Spec #", "Sonoco Spec #", "Toppan Spec #")
+
+
 def _spec_number_from_fields(pd_fields: dict[str, str]) -> str:
     """The org's own spec number, whatever the label calls it.
 
@@ -458,7 +464,7 @@ def _spec_number_from_fields(pd_fields: dict[str, str]) -> str:
     "Toppan Spec #". "Customer Spec #" is a *different* number (the
     customer's own, often blank) and must never be mistaken for ours.
     """
-    for label in ("Spec #", "Sonoco Spec #", "Toppan Spec #"):
+    for label in SPEC_NUMBER_LABELS:
         value = pd_fields.get(label, "").strip()
         if value:
             return value

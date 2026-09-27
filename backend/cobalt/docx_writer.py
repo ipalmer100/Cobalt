@@ -175,39 +175,46 @@ def _last_row_if_blank(table: Table):  # noqa: ANN201
 def _revision_base(rev_table: Table, pd_table: Table | None) -> str:
     """The revision number to increment from.
 
-    Taking the last Revision History row blindly is wrong on real specs:
-    HK0070's table ends in an entirely blank row, and reading that as the
-    previous revision restarted a spec sitting at revision 4 back at 01 --
-    destroying the sequence the revision history exists to establish.
+    **Revision History is authoritative.** It is the audit trail -- the
+    record of what was actually issued, one row per revision, each with a
+    date and an author. Product Description's Revision # is a restatement
+    of it, so when the two disagree the table is right and the header is
+    what needs correcting. Writing the new number to both is what corrects
+    it, so the spec heals itself on its next revision instead of drifting
+    further apart.
 
-    So: the last row that actually carries a number, cross-checked against
-    the Revision # the spec states in Product Description. The higher of the
-    two wins, because either one being ahead means the other was missed at
-    some point, and continuing from the lower would reuse a number that has
-    already been issued.
+    An earlier version took the higher of the two, reasoning that whichever
+    was ahead must have been issued. That misreads how the mismatch
+    actually arises. Somebody removing a revision row in Word -- undoing a
+    change that was never released -- leaves the table at 12 and the header
+    still saying 13, and taking the higher then issued 14, skipping 13
+    entirely and leaving a permanent gap in a regulated document's
+    numbering. Deferring to the table means the next revision is 13, which
+    is the number the audit trail says comes next.
+
+    Taking the table's *last row* blindly is still wrong, though, and that
+    is what the bottom-up scan is for: HK0070's table ends in an entirely
+    blank row, and reading that as the previous revision restarted a spec
+    sitting at revision 4 back at 01. So: the last row that actually
+    carries a number, and the header only when the table carries none at
+    all.
     """
-    from_history = ""
     for row in reversed(rev_table.rows[1:]):
         candidate = row.cells[0].text.strip() if row.cells else ""
         if _TRAILING_DIGITS.search(candidate):
-            from_history = candidate
-            break
+            return candidate
 
-    from_pd = ""
+    # No row in the table carries a number -- a spec whose history has been
+    # emptied, or one that has never been revised. The header is all there
+    # is to go on.
     if pd_table is not None:
         for row in pd_table.rows:
             cells = row.cells
             for i, cell in enumerate(cells):
                 text = cell.text.strip()
                 if text.rstrip(":").strip().lower() == "revision #" and i + 1 < len(cells):
-                    from_pd = cells[i + 1].text.strip()
-                    break
-
-    def numeric(value: str) -> int:
-        match = _TRAILING_DIGITS.search(value)
-        return int(match.group(1)) if match else -1
-
-    return from_history if numeric(from_history) >= numeric(from_pd) else from_pd
+                    return cells[i + 1].text.strip()
+    return ""
 
 
 def _resolve_table(doc: Document, section: str, table_index: int | None = None) -> Table:

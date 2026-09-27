@@ -1,4 +1,8 @@
 :root {
+  /* Tells the browser which theme its built-in widgets -- scrollbars,
+     form controls, the canvas behind the page -- should render in.
+     Without it a forced dark theme leaves white scrollbars. */
+  color-scheme: light;
   --bg: #ffffff;
   --bg-sidebar: #fafafa;
   --bg-hover: #efefef;
@@ -9,8 +13,13 @@
   --error: #c0392b;
 }
 
+/* Dark values live in one place and are applied two ways: by the
+   system preference unless the user has explicitly chosen light, and
+   by an explicit choice of dark. "Match system" sets no attribute at
+   all, so the media query governs on its own. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
     --bg: #1e1e22;
     --bg-sidebar: #17171a;
     --bg-hover: #2a2a30;
@@ -20,6 +29,18 @@
     --accent: #7d88f7;
     --error: #e57373;
   }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #1e1e22;
+  --bg-sidebar: #17171a;
+  --bg-hover: #2a2a30;
+  --border: #333338;
+  --text: #e8e8ea;
+  --text-muted: #9a9aa2;
+  --accent: #7d88f7;
+  --error: #e57373;
 }
 
 .open-vault-screen {
@@ -1621,12 +1642,22 @@ textarea.detail-editor.dirty {
   --category-blown-film-soft: rgba(15, 118, 110, 0.1);
 }
 
+/* Dark values live in one place and are applied two ways: by the
+   system preference unless the user has explicitly chosen light, and
+   by an explicit choice of dark. "Match system" sets no attribute at
+   all, so the media query governs on its own. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --category-blown-film: #5ecfc4;
     --category-blown-film-solid: #12786f;
     --category-blown-film-soft: rgba(94, 207, 196, 0.14);
   }
+}
+
+:root[data-theme="dark"] {
+  --category-blown-film: #5ecfc4;
+  --category-blown-film-solid: #12786f;
+  --category-blown-film-soft: rgba(94, 207, 196, 0.14);
 }
 
 .sidebar-category {
@@ -1774,4 +1805,81 @@ textarea.detail-editor.dirty {
    of the two should claim the free space. */
 .grid-excluded-note + .grid-row-count {
   margin-left: 10px;
+}
+
+/* The appearance control. Sits with the name field rather than the tabs:
+   it changes how the app looks, not what it is showing. */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.theme-toggle svg {
+  flex-shrink: 0;
+}
+
+/* The toggle took the auto margin that used to push the name field right,
+   so the field no longer needs one -- otherwise the two would fight and
+   leave a gap between them. */
+.theme-toggle + .who-input {
+  margin-left: 8px;
+}
+
+/* Narrow windows: the icon alone still says which mode is active, and the
+   tooltip carries the rest. */
+@media (max-width: 1100px) {
+  .theme-toggle-label {
+    display: none;
+  }
+}
+
+/* The appearance control on the opening screen. Tucked into the corner:
+   available, but not competing with the one thing that screen is for. */
+.open-vault-corner {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+}
+
+.open-vault-screen {
+  position: relative;
+}
+
+/* The duplicate-from picker. A search box over a list box, rather than a
+   dropdown: choosing one spec out of a few thousand is a search problem,
+   and a dropdown makes you scroll for it. */
+.source-search {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px 6px 0 0;
+  border-bottom: none;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.source-list {
+  width: 100%;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
 }
