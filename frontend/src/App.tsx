@@ -130,24 +130,47 @@ export default function App() {
   }
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstPendingChange = useRef<number | null>(null);
 
   useEffect(() => {
     if (!root) return;
+
+    // Coalescing changes into one refresh, with a ceiling on how long that
+    // can be put off.
+    //
+    // A single batch write (a fill-handle drag across several files)
+    // broadcasts one "changed" event per touched file, and refetching the
+    // whole view once per file is pure waste -- our own optimistic update
+    // has already applied. That is what the delay is for.
+    //
+    // The ceiling is for a SharePoint library synced with OneDrive, where
+    // the sync client touches files more or less continuously. A plain
+    // debounce restarts its timer on every event, so under constant churn
+    // it would never fire at all and the grid would silently go stale. So
+    // a burst is still collapsed into one refresh, but a refresh always
+    // happens within MAX_REFRESH_DELAY of the first change waiting for it.
+    const QUIET_PERIOD = 600;
+    const MAX_REFRESH_DELAY = 5000;
+
+    const refresh = () => {
+      debounceTimer.current = null;
+      firstPendingChange.current = null;
+      refreshVaultList();
+      setRefreshToken((t) => t + 1);
+    };
+
     const disconnect = connectLiveUpdates(() => {
-      // A single batch write (e.g. a fill-handle drag spanning several
-      // files) broadcasts one "changed" event per touched file. Reacting
-      // to each individually would refetch the whole current view once
-      // per file even though our own optimistic update already applied --
-      // coalesce a burst into a single refresh instead.
+      const now = Date.now();
+      if (firstPendingChange.current === null) firstPendingChange.current = now;
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      debounceTimer.current = setTimeout(() => {
-        refreshVaultList();
-        setRefreshToken((t) => t + 1);
-      }, 150);
+      const waitedFor = now - firstPendingChange.current;
+      debounceTimer.current = setTimeout(refresh, Math.max(0, Math.min(QUIET_PERIOD, MAX_REFRESH_DELAY - waitedFor)));
     });
+
     return () => {
       disconnect();
       if (debounceTimer.current) clearTimeout(debounceTimer.current);
+      firstPendingChange.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root]);

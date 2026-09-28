@@ -63,6 +63,12 @@ export default function Sidebar({
   // the two: thousands of always-mounted buttons made the sidebar visibly
   // slow to render and scroll).
   const [query, setQuery] = useState("");
+  // Most people looking for a spec know the customer before they know
+  // anything else, and a library organised by customer folder makes it the
+  // natural first cut. Typing it into the search box works, but only if you
+  // remember exactly how it is spelled -- "LIQUIPAK CORPORATION" is not
+  // something anyone wants to type, and "3M COMPANY" is easy to get wrong.
+  const [customer, setCustomer] = useState("");
   // The Active/Inactive state lives in the app, not here: it filters the
   // mass-edit grid too, so a spec hidden in one place is hidden in both.
   const { showActive, showInactive } = status;
@@ -89,6 +95,25 @@ export default function Sidebar({
     return counts;
   }, [sorted]);
 
+  // Every customer in the vault, with how many specs each has. Sorted by
+  // name rather than count: this is a list people scan for one they already
+  // have in mind, not a ranking.
+  const customers = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of sorted) {
+      const name = (entry.customer ?? "").trim();
+      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+    return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  }, [sorted]);
+
+  // A selected customer can stop existing -- their last spec gets renamed,
+  // refiled, or the vault is reopened somewhere else. Falling back to "all"
+  // beats showing an empty list with a blank dropdown and no clue why.
+  // Derived rather than reset in an effect, so if that customer comes back
+  // the selection comes back with them.
+  const activeCustomer = customers.some(([name]) => name === customer) ? customer : "";
+
   // Offered only when the vault actually holds more than one kind of spec.
   // A control that cannot change anything is noise in a narrow sidebar.
   const categories = useMemo(
@@ -102,12 +127,13 @@ export default function Sidebar({
     const term = query.trim().toLowerCase();
     return sorted.filter((entry) => {
       if (category !== "all" && entry.category !== category) return false;
+      if (activeCustomer && (entry.customer ?? "").trim() !== activeCustomer) return false;
       if (!(isInactive(root, entry.path) ? showInactive : showActive)) return false;
       if (!term) return true;
       return [entry.spec_number, entry.customer, fileName(entry.path), relativeFolder(root, entry.path)]
         .some((field) => (field ?? "").toLowerCase().includes(term));
     });
-  }, [sorted, query, root, showActive, showInactive, category]);
+  }, [sorted, query, root, showActive, showInactive, category, activeCustomer]);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const virtualizer = useVirtualizer({
@@ -133,6 +159,21 @@ export default function Sidebar({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
+      {customers.length > 1 && (
+        <select
+          className="sidebar-customer"
+          value={activeCustomer}
+          onChange={(e) => setCustomer(e.target.value)}
+          title="Show only one customer's specs"
+        >
+          <option value="">All customers ({sorted.length})</option>
+          {customers.map(([name, count]) => (
+            <option key={name} value={name}>
+              {name} ({count})
+            </option>
+          ))}
+        </select>
+      )}
       {categories.length > 1 && (
         <div className="sidebar-category">
           <div className="sidebar-filter-label">Category</div>
@@ -186,7 +227,7 @@ export default function Sidebar({
           </button>
         </div>
       )}
-      {(query.trim() !== "" || !showActive || !showInactive || category !== "all") && (
+      {(query.trim() !== "" || !showActive || !showInactive || category !== "all" || activeCustomer) && (
         <div className="sidebar-search-count">
           {filtered.length} of {sorted.length}
         </div>

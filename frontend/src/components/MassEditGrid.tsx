@@ -253,6 +253,9 @@ export default function MassEditGrid({ section, refreshToken, who, status, exclu
   const [readonlyColumns, setReadonlyColumns] = useState<string[]>([]);
   const [root, setRoot] = useState("");
   const [loading, setLoading] = useState(false);
+  // A refresh only announces itself if it is slow enough to be worth
+  // announcing. See the effect below.
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Edits are held here, keyed by cell, and reach no document until the
   // revision describing them is written with them. `original` is kept so a
@@ -277,6 +280,22 @@ export default function MassEditGrid({ section, refreshToken, who, status, exclu
   const [dragging, setDragging] = useState<DragState | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Only say "Refreshing…" if the refresh is slow enough that silence would
+  // look like a hang. A synced SharePoint library fires filesystem events
+  // more or less continuously, and most refreshes finish well inside this
+  // window -- so in normal use nothing appears at all, which is the point:
+  // a manager reading the grid should not see it flicker every few seconds
+  // because OneDrive touched a file.
+  useEffect(() => {
+    if (!loading) {
+      setRefreshing(false);
+      return;
+    }
+    const timer = setTimeout(() => setRefreshing(true), 400);
+    return () => clearTimeout(timer);
+  }, [loading]);
+
 
   async function load() {
     setLoading(true);
@@ -585,7 +604,6 @@ export default function MassEditGrid({ section, refreshToken, who, status, exclu
 
   return (
     <div className="mass-edit-grid">
-      {loading && <div className="loading">Loading…</div>}
       {error && <div className="error">{error}</div>}
       {!editable && (
         <div className="warnings">
@@ -677,6 +695,13 @@ export default function MassEditGrid({ section, refreshToken, who, status, exclu
             {excludedSpecs} Blown Film {excludedSpecs === 1 ? "spec" : "specs"} not shown
           </span>
         )}
+        {/* Always rendered, so appearing and disappearing moves nothing.
+            This used to be a block at the top of the grid: on a OneDrive-
+            synced library the watcher fires constantly, and every refresh
+            pushed the whole page down and let it spring back. */}
+        <span className={`grid-refreshing ${refreshing ? "on" : ""}`} aria-live="polite">
+          {refreshing ? "Refreshing…" : ""}
+        </span>
         <span className="grid-row-count">{sortedRows.length} rows</span>
       </div>
 
@@ -781,6 +806,7 @@ export default function MassEditGrid({ section, refreshToken, who, status, exclu
           </tbody>
         </table>
       </div>
+      {loading && rows.length === 0 && <div className="empty">Loading…</div>}
       {!loading && rows.length === 0 && <div className="empty">No rows found for this view.</div>}
       {!loading && rows.length > 0 && sortedRows.length === 0 && (
         <div className="empty">No rows match the current filters.</div>

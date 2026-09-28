@@ -1883,3 +1883,37 @@ textarea.detail-editor.dirty {
   color: var(--text);
   font-size: 13px;
 }
+
+/* The grid's refresh indicator. Always in the DOM and reserving its own
+   width, so it can come and go without moving the row count beside it or
+   the grid below it. It replaced a block element at the top of the grid,
+   which pushed the whole page down on every refresh -- unbearable on a
+   synced library, where refreshes never stop. */
+.grid-refreshing {
+  min-width: 78px;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 120ms ease-in;
+}
+
+.grid-refreshing.on {
+  opacity: 1;
+}
+
+/* Customer filter, directly under the search box. A dropdown rather than
+   more toggles: there are hundreds of customers, not two, and people come
+   to this knowing which one they want. */
+.sidebar-customer {
+  margin: 8px 10px 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  /* The names are long and the sidebar is narrow; let the control size to
+     the column and truncate rather than widening it. */
+  max-width: calc(100% - 20px);
+}
