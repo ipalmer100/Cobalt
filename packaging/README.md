@@ -187,6 +187,12 @@ starts the identical application through Python instead — same server, same
 interface, same port. No new executable is involved, so executable
 allow-listing has nothing to object to.
 
+For a normal double-click launch rather than a batch file, run
+`packaging\create_shortcut.bat` once. It puts a **Cobalt** shortcut on the
+Desktop carrying the app icon, which can be pinned to the taskbar or Start.
+A shortcut is not an executable, so it adds nothing for allow-listing to
+object to — it just points at `run_cobalt.bat`.
+
 This is a stopgap, not a way around the control. Tell whoever manages the
 machine that you are running it, and get the exe signed or allow-listed
 before anyone else uses it.
@@ -226,10 +232,28 @@ What to ask for, cheapest first:
    rebuild, so ask for the path rule if they will give you one.
 3. **A code-signing certificate.** This is the real fix and the only one
    that scales past a pilot: a signed binary satisfies SmartScreen,
-   satisfies publisher-based AppLocker rules, and needs no per-machine
-   exception. Organisations that distribute internal tools usually already
-   have one. Signing is a single command added to the end of the build
-   (`signtool sign /fd sha256 /tr <timestamp-url> /td sha256 ...`).
+   satisfies publisher-based AppLocker rules, gives Defender a publisher to
+   trust, and needs no per-machine exception. Organisations that distribute
+   internal tools usually already have one.
+
+   **The build is already set up for it.** Install the certificate on the
+   build machine, then:
+
+   ```
+   set COBALT_SIGN_THUMBPRINT=<the certificate's SHA1 thumbprint>
+   packaging\build_windows_exe.bat
+   ```
+
+   It finds `signtool` (from the Windows SDK, or `COBALT_SIGNTOOL` if you
+   point at it), signs with a timestamp so the signature outlives the
+   certificate's expiry, and verifies the result. With the variable unset
+   the build behaves exactly as before and says the app is unsigned.
+
+   Nobody outside your organisation can do this step: signing needs the
+   private key, and a certificate is issued to a verified legal entity.
+   A self-signed certificate is not a shortcut — it satisfies nothing
+   unless IT deploys its root to every machine, and if they are deploying
+   a certificate anyway, it should be a real one.
 
 Ask for 3 if you are going past a handful of users. Options 1 and 2 are
 fine for a pilot and a demo.

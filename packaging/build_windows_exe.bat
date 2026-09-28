@@ -121,6 +121,52 @@ rem Going through the interpreter sidesteps the shim entirely.
 python -m PyInstaller --clean --noconfirm --distpath packaging\dist --workpath packaging\build packaging\cobalt.spec
 if errorlevel 1 goto :error_pyinstaller
 
+rem === Code signing - optional, and the thing that makes the exe runnable
+rem on a managed machine. An unsigned binary fails Defender's "prevalence,
+rem age, or trusted list" rule whatever it contains, and no change to this
+rem build can satisfy that rule. A signature can.
+rem
+rem Set COBALT_SIGN_THUMBPRINT to the SHA1 thumbprint of a code-signing
+rem certificate installed on this machine and the exe gets signed. Leave it
+rem unset and the build behaves exactly as it did before.
+rem
+rem   set COBALT_SIGN_THUMBPRINT=a1b2c3...
+rem   packaging\build_windows_exe.bat
+if not defined COBALT_SIGN_THUMBPRINT goto :unsigned
+
+echo.
+echo === Signing Cobalt.exe ===
+if defined COBALT_SIGNTOOL goto :have_signtool
+set "COBALT_SIGNTOOL=signtool"
+where signtool >nul 2>nul
+if not errorlevel 1 goto :have_signtool
+rem signtool ships with the Windows SDK and is not on PATH by default.
+for /f "delims=" %%S in ('dir /b /s /o-n "%ProgramFiles(x86)%\Windows Kits\10\bin\*\x64\signtool.exe" 2^>nul') do (
+    set "COBALT_SIGNTOOL=%%S"
+    goto :have_signtool
+)
+echo   Could not find signtool.exe. Install the Windows SDK, or set
+echo   COBALT_SIGNTOOL to its full path, then re-run.
+goto :error_signing
+
+:have_signtool
+rem /tr timestamps the signature so it stays valid after the certificate
+rem expires - without it, every copy stops verifying on expiry day.
+"%COBALT_SIGNTOOL%" sign /fd sha256 /td sha256 /tr http://timestamp.digicert.com /sha1 %COBALT_SIGN_THUMBPRINT% "packaging\dist\Cobalt\Cobalt.exe"
+if errorlevel 1 goto :error_signing
+"%COBALT_SIGNTOOL%" verify /pa "packaging\dist\Cobalt\Cobalt.exe"
+if errorlevel 1 goto :error_signing
+echo   Signed and verified.
+goto :built
+
+:unsigned
+echo.
+echo   Not signed - COBALT_SIGN_THUMBPRINT is not set.
+echo   The app still works. On a managed PC it may be blocked, in which
+echo   case use packaging\run_cobalt.bat while IT issues a certificate.
+echo   See "Running it on a managed PC" in packaging\README.md.
+
+:built
 echo.
 echo ============================================================
 echo  Done. The app is at: packaging\dist\Cobalt\
@@ -128,6 +174,9 @@ echo.
 echo  Double-click Cobalt.exe inside that folder to run it.
 echo  To share it, zip the whole Cobalt folder - not just the exe -
 echo  and have the recipient unzip it before running.
+echo.
+echo  For a Desktop shortcut that avoids the exe entirely:
+echo      packaging\create_shortcut.bat
 echo ============================================================
 goto :end
 
@@ -188,6 +237,19 @@ echo       Cobalt. Delete it and re-run:  rmdir /s /q backend\specwrite
 echo.
 echo   Connection / SSL / timeout errors
 echo       No internet access, or a proxy blocking pip.
+echo.
+exit /b 1
+
+:error_signing
+echo.
+echo Signing failed, so the app is built but unsigned.
+echo.
+echo Read the signtool output above. Common causes: the thumbprint in
+echo COBALT_SIGN_THUMBPRINT matches no certificate on this machine, the
+echo certificate has no private key attached, or the timestamp server was
+echo unreachable.
+echo.
+echo The unsigned app is still in packaging\dist\Cobalt\ and still runs.
 echo.
 exit /b 1
 
