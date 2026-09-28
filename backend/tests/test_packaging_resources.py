@@ -73,3 +73,21 @@ def test_the_version_resource_names_a_publisher(field):
     Windows' reputation checks, and leaves IT nothing to write an allow-list
     rule against."""
     assert field in VERSION_INFO.read_text()
+
+
+def test_the_no_exe_launcher_points_at_the_same_entry_point():
+    """run_cobalt.bat is the fallback for a machine that refuses to run a
+    freshly-built unsigned binary. It has to start the same application the
+    exe does, or it is a second thing to keep working."""
+    launcher = (PACKAGING / "run_cobalt.bat").read_text()
+    spec = (PACKAGING / "cobalt.spec").read_text()
+    assert "cobalt.desktop" in launcher
+    assert "cobalt/desktop.py" in spec.replace("\\", "/") or "desktop" in spec
+
+    # It must check its prerequisites rather than failing obscurely: the
+    # build venv it runs from, and the built frontend it serves.
+    assert ".build-venv" in launcher
+    assert "frontend\\dist" in launcher
+
+    # And it must not quietly imply this is a way around the control.
+    assert "stopgap" in launcher.lower()

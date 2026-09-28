@@ -172,7 +172,24 @@ trying anything:
 | --- | --- | --- |
 | "Windows protected your PC" with a **Run anyway** under *More info* | SmartScreen, because the exe is unsigned and new | Click through once; Windows remembers. Or sign it. |
 | A prompt for an **administrator password** | Windows decided the exe needs elevation | The manifest below; failing that, IT policy |
+| "Windows cannot access the specified device, path, or file" **plus** a **"Risky action blocked"** notification | Microsoft Defender for Endpoint stopped it. Usually the attack-surface-reduction rule *"Block executable files from running unless they meet a prevalence, age, or trusted list criterion"* — a binary compiled ten minutes ago meets none of the three | `run_cobalt.bat` today; an exclusion or a signature from IT |
 | Nothing happens, or "blocked by your administrator" | AppLocker / WDAC policy refusing unsigned code | Only IT can fix this — see below |
+
+Note that the "cannot access the specified device, path, or file" wording is
+misleading: it is Windows' generic message for *execution refused by
+policy*, and has nothing to do with file permissions. Changing the folder's
+permissions will not help.
+
+### Running it without the .exe
+
+If the executable itself is what is being blocked, `packaging\run_cobalt.bat`
+starts the identical application through Python instead — same server, same
+interface, same port. No new executable is involved, so executable
+allow-listing has nothing to object to.
+
+This is a stopgap, not a way around the control. Tell whoever manages the
+machine that you are running it, and get the exe signed or allow-listed
+before anyone else uses it.
 
 Cobalt has never needed administrator rights: it reads and writes spec
 documents as whoever runs it, and stores its own state inside the vault
@@ -186,8 +203,20 @@ publisher metadata so Explorer and SmartScreen have something to name.
 
 Both ship in the build. If you built before they existed, rebuild.
 
-**If it is still blocked, it is policy, and only IT can lift it.** What to
-ask for, cheapest first:
+**If it is still blocked, it is policy, and only IT can lift it.**
+
+A Defender block is reported centrally, so IT can see exactly what happened
+without reproducing it. Give them the **date and time** of the notification
+and the **full path** of the exe, and ask which control fired — the answer
+is one of three, and they need different things:
+
+| If it was | Ask for |
+| --- | --- |
+| An attack-surface-reduction rule | An ASR exclusion for the folder, via `Add-MpPreference -AttackSurfaceReductionOnlyExclusions` or Intune |
+| AppLocker | A path rule for the folder, or a publisher rule once the exe is signed |
+| WDAC / Application Control | The exe added to the policy — in practice this means signing it |
+
+What to ask for, cheapest first:
 
 1. **Run it from a user-writable folder** — `%USERPROFILE%\Cobalt\`, not
    `C:\Program Files\`. Some policies only restrict protected locations,
