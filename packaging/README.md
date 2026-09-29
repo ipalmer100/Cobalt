@@ -381,11 +381,14 @@ are all `.docx`.
 
 ## Known constraints of this v1 packaging
 
-- **Unsigned binary.** Windows SmartScreen / Defender will very likely
-  flag a fresh, unsigned exe from an unrecognized publisher on first run
-  ("Windows protected your PC"). Click "More info" → "Run anyway." Code
-  signing would remove this but needs a paid certificate and is out of
-  scope for v1.
+- **Unsigned by default.** A fresh unsigned exe from an unrecognised
+  publisher gets flagged on first run, and on a managed machine may be
+  refused outright — see "Running it on a managed PC" above, which covers
+  the three ways that happens and what each needs. The build can sign the
+  result (`COBALT_SIGN_THUMBPRINT`); it needs a certificate, which only
+  your organisation can issue. Signing is the only fix that scales past a
+  pilot, so treat it as a prerequisite for rolling out to other sites
+  rather than a later nicety.
 - **One instance, one vault.** Same constraint as the source-code version
   — double-clicking the exe again while it's running just opens another
   browser tab to the same running instance rather than a second app.
