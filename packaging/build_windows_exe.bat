@@ -61,15 +61,28 @@ popd
 echo.
 echo === Checking for a LibreOffice install to bundle - optional ===
 set "COBALT_LIBREOFFICE_DIR="
-if exist "%ProgramFiles%\LibreOffice\program\soffice.exe" set "COBALT_LIBREOFFICE_DIR=%ProgramFiles%\LibreOffice"
+rem Checked first, and deliberately: a copy sitting in packaging\libreoffice
+rem is the one that also works when the app runs from source through
+rem run_cobalt.bat. An installed LibreOffice only reaches the packaged .exe.
+if exist "packaging\libreoffice\program\soffice.exe" set "COBALT_LIBREOFFICE_DIR=%CD%\packaging\libreoffice"
+if not defined COBALT_LIBREOFFICE_DIR if exist "%ProgramFiles%\LibreOffice\program\soffice.exe" set "COBALT_LIBREOFFICE_DIR=%ProgramFiles%\LibreOffice"
 if not defined COBALT_LIBREOFFICE_DIR if exist "%ProgramFiles(x86)%\LibreOffice\program\soffice.exe" set "COBALT_LIBREOFFICE_DIR=%ProgramFiles(x86)%\LibreOffice"
 
 if defined COBALT_LIBREOFFICE_DIR goto :have_libreoffice
-echo   LibreOffice not found on this build machine - building without it.
-echo   .docx specs work normally either way. Legacy .doc files will only
-echo   convert if LibreOffice is installed on whichever machine runs
-echo   Cobalt. To bundle it instead, install LibreOffice here and
-echo   re-run this script.
+echo   LibreOffice not found - building without it.
+echo.
+echo   .docx specs work normally either way. This only affects legacy .doc
+echo   files, which Cobalt converts on first sight. If your library has
+echo   none, you need none - check by looking for .doc files in it.
+echo.
+echo   To include it, either install LibreOffice on this machine and
+echo   re-run, or unpack a portable copy into:
+echo.
+echo       packaging\libreoffice\        ^(so that
+echo       packaging\libreoffice\program\soffice.exe exists^)
+echo.
+echo   The second works for both ways of running Cobalt; an installed
+echo   copy only reaches the packaged .exe.
 goto :python_env
 
 :have_libreoffice

@@ -332,25 +332,52 @@ room rather than showing yesterday's practice.
 
 ## Bundling LibreOffice
 
-`build_windows_exe.bat` automatically checks `%ProgramFiles%\LibreOffice`
-and `%ProgramFiles(x86)%\LibreOffice` on the build machine. If it finds
-LibreOffice there, it bundles the *entire* install (several hundred MB —
-LibreOffice isn't small, and its `soffice.exe` needs its sibling `share\`
-folder alongside it to run at all, not just the one exe) into
-`Cobalt\_internal\libreoffice\`. `.doc` conversion then works on any
-machine running the built app, with nothing else installed there.
+**First: check whether you need it at all.** LibreOffice is used for one
+thing — converting legacy `.doc` files to `.docx` the first time Cobalt
+sees them. A library that is entirely `.docx` needs none of this. Search
+the folder for `*.doc` (not `*.docx`) before deciding; the structure export
+also reports the count as `legacy_doc_files_skipped`.
 
-If LibreOffice isn't found on the build machine, the script proceeds
-without it and says so — the app still works for everything else. `.doc`
-conversion in that case falls back to whatever `soffice` it finds on
-PATH on the machine *running* the app (the original behavior, unchanged);
-if none is installed there either, converting a `.doc` file fails with a
-clear error instead of silently doing nothing.
+If you do need it, where you put it decides which ways of running Cobalt
+can find it:
 
-To add LibreOffice to a build that was made without it: install
-LibreOffice on the build machine, then re-run
-`packaging\build_windows_exe.bat` — it'll be picked up and bundled on the
-next build.
+| Where LibreOffice is | Packaged `.exe` | `run_cobalt.bat` |
+| --- | --- | --- |
+| `packaging\libreoffice\` in the Cobalt folder | yes | yes |
+| Installed on the machine (Program Files) | yes, if installed on the **build** machine | yes, if installed on **that** machine |
+| Anywhere, named by `COBALT_SOFFICE` | yes | yes |
+| Nowhere | `.docx` works, `.doc` shows a conversion error | same |
+
+### Putting it in the folder
+
+Download the **portable** LibreOffice (LibreOfficePortable, or any copy of
+an install directory) and unpack it so that this path exists:
+
+```
+packaging\libreoffice\program\soffice.exe
+```
+
+That is all. The build finds it there and copies it into the packaged app,
+and `run_cobalt.bat` finds it there directly. One folder, both ways of
+running, nothing installed on the target machine.
+
+It is deliberately excluded from git — several hundred MB of third-party
+binaries do not belong in the repository — so it has to be unpacked on each
+machine that builds, or copied along with the built folder.
+
+### Or point at one somewhere else
+
+```
+set COBALT_SOFFICE=D:\tools\LibreOfficePortable\App\libreoffice\program\soffice.exe
+```
+
+Useful when a portable copy already lives on a shared drive, or in a folder
+IT has allow-listed. Accepts either the executable or the install directory
+containing it. An override that points at nothing is treated as an error
+rather than quietly falling back, so a typo surfaces instead of hiding.
+
+Bundling adds several hundred MB to the app folder. Skip it if your specs
+are all `.docx`.
 
 ## Known constraints of this v1 packaging
 

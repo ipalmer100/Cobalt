@@ -15,6 +15,7 @@ caller decides what to do with it once the .docx conversion is verified.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -26,26 +27,68 @@ class ConversionError(RuntimeError):
     pass
 
 
-def _bundled_soffice_path() -> Path | None:
-    """The packaged desktop app can optionally bundle a full LibreOffice
-    install under `<app>/libreoffice/` (see packaging/cobalt.spec and
-    packaging/build_windows_exe.bat) so .doc conversion works with nothing
-    else installed on the machine running the app. `sys._MEIPASS` is the
-    right base dir for this in both PyInstaller layouts: the temp
-    extraction dir in onefile mode, or the app's own folder in onedir
-    mode. Absent when running from source or when the build didn't bundle
-    LibreOffice -- soffice_path() falls back to PATH in that case."""
-    frozen_base = getattr(sys, "_MEIPASS", None)
-    if not frozen_base:
-        return None
-    for name in ("soffice.exe", "soffice"):
-        candidate = Path(frozen_base) / "libreoffice" / "program" / name
+# Where a LibreOffice that travels with Cobalt is kept, relative to
+# whichever base directory applies. Kept identical in both layouts so the
+# same folder works whether the app is running as the packaged .exe or
+# straight from source.
+_BUNDLE_SUBDIR = ("libreoffice", "program")
+_SOFFICE_NAMES = ("soffice.exe", "soffice")
+
+
+def _soffice_under(base: Path) -> Path | None:
+    for name in _SOFFICE_NAMES:
+        candidate = base.joinpath(*_BUNDLE_SUBDIR, name)
         if candidate.is_file():
             return candidate
     return None
 
 
+def _bundled_soffice_path() -> Path | None:
+    """A LibreOffice that travels with Cobalt, rather than one installed.
+
+    Checked in two places, because Cobalt is run two ways and both need to
+    work on a machine with nothing installed:
+
+    - as the packaged app, where the build copies LibreOffice inside it and
+      `sys._MEIPASS` is the app's own folder (onedir) or the temp
+      extraction dir (onefile);
+    - from source via packaging/run_cobalt.bat, which is what a managed PC
+      that refuses to run an unsigned binary is left with. This used to
+      return None immediately in that case, so a bundled LibreOffice was
+      invisible to exactly the people most likely to need it.
+
+    Returns None if neither holds; soffice_path() then falls back to PATH.
+    """
+    frozen_base = getattr(sys, "_MEIPASS", None)
+    if frozen_base:
+        found = _soffice_under(Path(frozen_base))
+        if found is not None:
+            return found
+
+    # Running from source: <repo>/packaging/libreoffice/program/soffice.exe
+    # -- the same folder the build bundles from, so dropping a portable
+    # LibreOffice there covers both ways of running.
+    repo_root = Path(__file__).resolve().parents[2]
+    return _soffice_under(repo_root / "packaging")
+
+
 def soffice_path() -> str | None:
+    """LibreOffice, wherever this machine keeps it.
+
+    Order matters: an explicit override wins, then one that travels with
+    Cobalt, then one installed on the machine. The override exists because
+    a portable LibreOffice can legitimately live anywhere -- a shared drive,
+    a USB stick, a folder IT has already allow-listed.
+    """
+    override = os.environ.get("COBALT_SOFFICE", "").strip()
+    if override:
+        candidate = Path(override)
+        # Point it at either the executable or the install it lives in.
+        if candidate.is_dir():
+            found = _soffice_under(candidate) or _soffice_under(candidate.parent)
+            return str(found) if found else None
+        return str(candidate) if candidate.is_file() else None
+
     bundled = _bundled_soffice_path()
     if bundled is not None:
         return str(bundled)
