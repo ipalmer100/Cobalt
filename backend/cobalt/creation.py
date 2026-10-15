@@ -20,6 +20,7 @@ from pathlib import Path
 from .docx_sections import PRODUCT_DESCRIPTION, SPEC_NUMBER_LABELS, parse_document
 from .docx_writer import append_row, clear_records, write_field_value
 from .models import Spec
+from .paths import long_path
 
 BLANK_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "blank_spec_template.docx"
 
@@ -89,7 +90,7 @@ def duplicate_spec(source_path: str, dest_path: str, spec_number: str, customer:
         raise CreationError(f"Source spec is not readable: {exc}") from exc
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(source_path, dest_path)
+    shutil.copy(long_path(source_path), long_path(dest_path))
 
     note = f"Spec created by duplicating {origin.spec_number or source.name}."
     _reset_new_spec_identity(dest_path, spec_number, customer, who, note)
@@ -104,7 +105,7 @@ def create_blank_spec(dest_path: str, spec_number: str, customer: str, who: str)
         raise CreationError(f"Destination already exists: {dest_path}")
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy(BLANK_TEMPLATE_PATH, dest_path)
+    shutil.copy(BLANK_TEMPLATE_PATH, long_path(dest_path))
 
     _reset_new_spec_identity(dest_path, spec_number, customer, who, "Spec created from blank template.")
     return parse_document(dest_path)

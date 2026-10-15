@@ -22,6 +22,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+from .paths import long_path
+
 
 class ConversionError(RuntimeError):
     pass
@@ -144,6 +146,6 @@ def convert_doc_to_docx(doc_path: str, dest_path: str | None = None, timeout: in
             )
 
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(converted, target)
+        shutil.copy(long_path(converted), long_path(target))
 
     return str(target)

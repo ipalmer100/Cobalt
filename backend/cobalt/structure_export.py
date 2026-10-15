@@ -46,6 +46,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .docx_sections import parse_document
+from .paths import MAX_PATH, exceeds_max_path, path_length
 from .models import ParsedTable, Spec, TableShape
 
 REPORT_VERSION = 1
@@ -223,6 +224,8 @@ class PlantStats:
     inactive: int = 0
     legacy_doc: int = 0
     unreadable: int = 0
+    over_max_path: int = 0
+    longest_path: int = 0
     layouts: set = field(default_factory=set)
     sections: Counter = field(default_factory=Counter)
     unclassified: Counter = field(default_factory=Counter)
@@ -234,6 +237,8 @@ class PlantStats:
             "filed_as_inactive": self.inactive,
             "legacy_doc_files": self.legacy_doc,
             "unreadable": self.unreadable,
+            "paths_over_windows_limit": self.over_max_path,
+            "longest_path": self.longest_path,
             "distinct_layouts": len(self.layouts),
             "sections_seen": dict(self.sections.most_common()),
             "unclassified_headings": dict(self.unclassified.most_common(25)),
@@ -247,6 +252,8 @@ class StructureReport:
     inactive: int = 0
     legacy_doc: int = 0
     unreadable: list[dict] = field(default_factory=list)
+    over_max_path: int = 0
+    longest_path: int = 0
     sections: Counter = field(default_factory=Counter)
     unclassified: Counter = field(default_factory=Counter)
     warnings: Counter = field(default_factory=Counter)
@@ -284,6 +291,13 @@ class StructureReport:
                 "filed_as_inactive": self.inactive,
                 "legacy_doc_files_skipped": self.legacy_doc,
                 "unreadable": len(self.unreadable),
+                # Windows refuses to open a path past 260 characters unless
+                # asked nicely, and reports it as if the file were corrupt.
+                # Counted for every file, readable or not: a path at 250
+                # characters is one folder rename away from breaking.
+                "paths_over_windows_limit": self.over_max_path,
+                "windows_path_limit": MAX_PATH,
+                "longest_path": self.longest_path,
                 "distinct_layouts": len(self.groups),
             },
             "sections_seen": dict(self.sections.most_common()),
@@ -384,6 +398,16 @@ def export_folder(
         if path.name.startswith("~$") or ".cobalt-tmp" in path.name:
             continue
         plant = report.plant(_plant_of(base, path)) if by_plant else None
+
+        length = path_length(path)
+        report.longest_path = max(report.longest_path, length)
+        if exceeds_max_path(path):
+            report.over_max_path += 1
+        if plant is not None:
+            plant.longest_path = max(plant.longest_path, length)
+            if exceeds_max_path(path):
+                plant.over_max_path += 1
+
         if path.suffix.lower() == ".doc":
             report.legacy_doc += 1
             if plant is not None:
@@ -455,7 +479,9 @@ def main(argv: list[str] | None = None) -> int:
     plants = data.get("plants", [])
     if len(plants) > 1:
         print()
-        print(f"  {'Plant':<42} {'specs':>7} {'.doc':>6} {'layouts':>8} {'unknown':>8} {'bad':>5}")
+        header = ("Plant", "specs", ".doc", "layouts", "unknown", "bad", "long")
+        print(f"  {header[0]:<42} {header[1]:>7} {header[2]:>6} {header[3]:>8} "
+              f"{header[4]:>8} {header[5]:>5} {header[6]:>6}")
         for row in plants:
             name = row["plant"]
             if len(name) > 42:
@@ -463,13 +489,14 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"  {name:<42} {row['specs']:>7} {row['legacy_doc_files']:>6} "
                 f"{row['distinct_layouts']:>8} {len(row['unclassified_headings']):>8} "
-                f"{row['unreadable']:>5}"
+                f"{row['unreadable']:>5} {row['paths_over_windows_limit']:>6}"
             )
         print()
         print("  .doc     = legacy files needing LibreOffice to convert")
         print("  layouts  = distinct document shapes, so how varied that plant's templates are")
         print("  unknown  = headings Cobalt cannot place yet, which need triaging once per plant")
         print("  bad      = files that could not be opened at all")
+        print(f"  long     = paths over Windows' {MAX_PATH}-character limit, which look corrupt until allowed")
         print()
     print(f"  {v['distinct_layouts']} distinct layout(s)")
     print(f"  {v['filed_as_inactive']} filed as inactive")
@@ -477,6 +504,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {v['legacy_doc_files_skipped']} legacy .doc file(s) skipped -- open them in Cobalt once to convert")
     if v["unreadable"]:
         print(f"  {v['unreadable']} unreadable")
+    if v["paths_over_windows_limit"]:
+        print(
+            f"  {v['paths_over_windows_limit']} path(s) longer than Windows' "
+            f"{v['windows_path_limit']}-character limit (longest {v['longest_path']}) -- "
+            "these look corrupt to anything that has not asked Windows to allow them"
+        )
     if data["unclassified_headings"]:
         print(f"  {len(data['unclassified_headings'])} heading(s) Cobalt could not place")
     print()

@@ -19,6 +19,7 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 from .models import ParsedTable, Spec, TableShape, UnclassifiedTable
+from .paths import long_path
 
 # Canonical section names, in the order they appear in a spec.
 PRODUCT_DESCRIPTION = "Product Description"
@@ -527,7 +528,7 @@ def parse_document(path: str, overrides: dict[str, str] | None = None) -> Spec:
 
 
 def _parse(source, key: str, overrides: dict[str, str] | None = None) -> Spec:  # noqa: ANN001
-    doc = Document(source)
+    doc = Document(long_path(source) if isinstance(source, str) else source)
 
     tables: dict[str, list[ParsedTable]] = {}
     warnings: list[str] = []

@@ -25,6 +25,7 @@ from docx import Document
 from docx.table import Table, _Cell
 
 from .docx_sections import PRODUCT_DESCRIPTION, extract_product_description, find_body_section_tables
+from .paths import long_path
 from .models import ParsedTable
 
 # One lock per spec file. Every write here is read-modify-write over the
@@ -67,8 +68,8 @@ def _save_atomically(doc, path: str) -> None:  # noqa: ANN001
     target = Path(path)
     temp = target.with_name(f".{target.name}.cobalt-tmp")
     try:
-        doc.save(str(temp))
-        os.replace(temp, target)
+        doc.save(long_path(temp))
+        os.replace(long_path(temp), long_path(target))
     except BaseException:
         temp.unlink(missing_ok=True)
         raise
@@ -263,7 +264,7 @@ def write_cell(path: str, section: str, row: int, col: int, value: str, table_in
     """Open a spec, write one cell by address in the named section, save.
     The mass-edit grid's primary write path."""
     with _exclusive(path):
-        doc = Document(path)
+        doc = Document(long_path(path))
         table = _resolve_table(doc, section, table_index)
         write_record_cell(table, row, col, value)
         _save_atomically(doc, path)
@@ -272,7 +273,7 @@ def write_cell(path: str, section: str, row: int, col: int, value: str, table_in
 def write_field_value(path: str, section: str, label: str, value: str, table_index: int | None = None) -> bool:
     """Open a spec, write one ``Label:`` field's value in the named section, save."""
     with _exclusive(path):
-        doc = Document(path)
+        doc = Document(long_path(path))
         table = _resolve_table(doc, section, table_index)
         found = write_field(table, label, value)
         if found:
@@ -283,7 +284,7 @@ def write_field_value(path: str, section: str, label: str, value: str, table_ind
 def append_row(path: str, section: str, values: list[str], table_index: int | None = None) -> None:
     """Open a spec, append a data row to a RECORDS-shape section, save."""
     with _exclusive(path):
-        doc = Document(path)
+        doc = Document(long_path(path))
         table = _resolve_table(doc, section, table_index)
         add_record_row(table, values)
         _save_atomically(doc, path)
@@ -305,7 +306,7 @@ def write_edits_batch(edits: list[dict]) -> None:
 
     for path, path_edits in by_path.items():
         with _exclusive(path):
-            doc = Document(path)
+            doc = Document(long_path(path))
             table_cache: dict[tuple[str, int | None], Table] = {}
             for edit in path_edits:
                 section = edit["section"]
@@ -327,7 +328,7 @@ def clear_records(path: str, section: str, table_index: int | None = None) -> No
     the header row. Used when spinning up a new spec (duplicate or blank
     template) so its Revision History doesn't inherit another spec's log."""
     with _exclusive(path):
-        doc = Document(path)
+        doc = Document(long_path(path))
         table = _resolve_table(doc, section, table_index)
         for row in list(table.rows[1:]):
             row._tr.getparent().remove(row._tr)
@@ -434,7 +435,7 @@ def commit_with_revision(
 
         try:
             for path in paths:
-                doc = Document(path)
+                doc = Document(long_path(path))
                 table_cache: dict = {}
                 for edit in edits_by_path[path]:
                     _apply_one_edit(doc, edit, table_cache)
@@ -442,7 +443,7 @@ def commit_with_revision(
 
                 target = Path(path)
                 temp = target.with_name(f".{target.name}.cobalt-tmp")
-                doc.save(str(temp))
+                doc.save(long_path(temp))
                 staged.append((temp, target))
         except BaseException:
             for temp, _ in staged:
@@ -450,7 +451,7 @@ def commit_with_revision(
             raise
 
         for temp, target in staged:
-            os.replace(temp, target)
+            os.replace(long_path(temp), long_path(target))
 
     return new_revisions
 
@@ -464,7 +465,7 @@ def apply_revision(path: str, who: str, revision_text: str, revision_date: date_
     # racing would both read the same previous number and one would be
     # lost -- taking the Revision # / Revision History pairing with it.
     with _exclusive(path):
-        doc = Document(path)
+        doc = Document(long_path(path))
         new_rev = _apply_revision_to_open_doc(doc, who, revision_text, revision_date)
         _save_atomically(doc, path)
         return new_rev
