@@ -383,6 +383,32 @@ spec's data. Worth reading that section before sending the file on.
 
 `--limit N` stops after N specs, for a quick sample.
 
+### Several plants at once
+
+Pointed at a division folder — plant folders over customer folders —
+`--by-plant` adds a per-plant table, because that is the unit a rollout is
+planned in and divisional totals answer none of its questions:
+
+```
+python -m cobalt.structure_export "/path/to/division" --out division.json --by-plant
+```
+
+```
+  Plant                                        specs   .doc  layouts  unknown   bad
+  Elk Grove Flexible Plant Documentation          20      0        1        0     0
+  Waco Flexible Plant Documentation - Cus...      14      5        1        1     0
+  Franklin OH Plant Specifications                 9      0        2        0     0
+```
+
+`.doc` says which plants need LibreOffice at all, `layouts` how varied
+their templates are, and `unknown` how much triaging each needs before
+anyone there uses Cobalt.
+
+It is off by default, and it is the only option that puts a folder name in
+the report: that top-level folder is a plant only when the path is rooted
+at a division. Rooted at one site it is a customer, so this stays
+something the caller turns on knowingly.
+
 ## Testing
 
 ```

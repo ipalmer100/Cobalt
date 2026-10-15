@@ -219,3 +219,86 @@ def test_cli_writes_the_report_and_a_local_only_mapping(tmp_path, capsys, monkey
 
 def test_cli_rejects_an_unknown_flag(tmp_path):
     assert main([str(tmp_path), "--send-everything"]) == 2
+
+
+# --- per-plant breakdown --------------------------------------------------
+# A division folder is plant folders over customer folders. Rolling Cobalt
+# out is planned per plant, and divisional totals answer none of the
+# questions that matter: one plant with a thousand .doc files and seven with
+# none averages to "some".
+
+
+def _division(tmp_path):
+    """Two plants, one of which has legacy .doc files and an odd heading."""
+    root = tmp_path / "Division"
+    for plant, specs, legacy in (("Elk Grove Plant", 3, 0), ("Waco Plant", 2, 2)):
+        folder = root / plant / "Wrigley Master Specification"
+        folder.mkdir(parents=True)
+        for i in range(specs):
+            build_sample_spec_docx(str(folder / f"A{i}.docx"), spec_number=f"A{i}")
+        for j in range(legacy):
+            (folder / f"OLD{j}.doc").write_bytes(b"legacy")
+    return root
+
+
+def test_the_breakdown_is_off_unless_asked_for(tmp_path):
+    """It is the one thing here that puts a folder name in the report, and
+    rooted at a single site that folder is a customer, not a plant."""
+    report, _ = export_folder(str(_division(tmp_path)))
+    data = report.to_json()
+    assert "plants" not in data
+    assert "Waco" not in json.dumps(data)
+
+
+def test_it_breaks_the_library_down_by_plant(tmp_path):
+    report, _ = export_folder(str(_division(tmp_path)), by_plant=True)
+    data = report.to_json()
+
+    by_name = {p["plant"]: p for p in data["plants"]}
+    assert set(by_name) == {"Elk Grove Plant", "Waco Plant"}
+    assert by_name["Elk Grove Plant"]["specs"] == 3
+    assert by_name["Waco Plant"]["specs"] == 2
+    # The question that decides whether a plant needs LibreOffice at all.
+    assert by_name["Elk Grove Plant"]["legacy_doc_files"] == 0
+    assert by_name["Waco Plant"]["legacy_doc_files"] == 2
+
+
+def test_the_plant_numbers_add_up_to_the_division(tmp_path):
+    report, _ = export_folder(str(_division(tmp_path)), by_plant=True)
+    data = report.to_json()
+    assert sum(p["specs"] for p in data["plants"]) == data["vault"]["specs_analyzed"]
+    assert sum(p["legacy_doc_files"] for p in data["plants"]) == data["vault"]["legacy_doc_files_skipped"]
+
+
+def test_only_the_plant_folder_is_named_never_the_customer_below_it(tmp_path):
+    report, _ = export_folder(str(_division(tmp_path)), by_plant=True)
+    text = json.dumps(report.to_json())
+    assert "Elk Grove Plant" in text
+    assert "Wrigley" not in text, "the customer folder must not travel with the plant name"
+
+
+def test_biggest_plant_first(tmp_path):
+    report, _ = export_folder(str(_division(tmp_path)), by_plant=True)
+    counts = [p["specs"] for p in report.to_json()["plants"]]
+    assert counts == sorted(counts, reverse=True)
+
+
+def test_a_spec_loose_at_the_root_is_still_counted(tmp_path):
+    root = _division(tmp_path)
+    build_sample_spec_docx(str(root / "stray.docx"), spec_number="STRAY")
+    report, _ = export_folder(str(root), by_plant=True)
+    by_name = {p["plant"]: p for p in report.to_json()["plants"]}
+    assert by_name["(root)"]["specs"] == 1
+
+
+def test_the_cli_takes_the_flag(tmp_path, capsys, monkeypatch):
+    root = _division(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    out = tmp_path / "division.json"
+    assert main([str(root), "--out", str(out), "--by-plant"]) == 0
+
+    data = json.loads(out.read_text())
+    assert {p["plant"] for p in data["plants"]} == {"Elk Grove Plant", "Waco Plant"}
+    printed = capsys.readouterr().out
+    assert "Elk Grove Plant" in printed, "the table is the point of running it"
+    assert ".doc" in printed
