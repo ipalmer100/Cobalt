@@ -7,6 +7,9 @@ names -- reach the report.
 """
 
 import json
+import pathlib
+
+import pytest
 
 from docx import Document
 
@@ -333,3 +336,52 @@ def test_the_cli_takes_the_flag(tmp_path, capsys, monkeypatch):
     printed = capsys.readouterr().out
     assert "Elk Grove Plant" in printed, "the table is the point of running it"
     assert ".doc" in printed
+
+
+# --- retired specs: inactive and obsolete are one category ----------------
+
+
+@pytest.mark.parametrize(
+    "folder,retired",
+    [
+        ("Inactive Specifications", True),
+        ("Inactives", True),
+        ("Obsolete", True),
+        ("Obsolete Specifications", True),
+        ("OBSOLETE SPECS", True),
+        ("Obsoleted", True),
+        ("Active Specifications", False),
+        # Near misses that must not be swept up: a customer whose name
+        # contains the letters, and a folder about the idea rather than a
+        # folder of retired specs.
+        ("Interactive Displays Co", False),
+        ("Reactivated", False),
+        ("Lobsolete Industries", False),
+        ("Obsolescence Review", False),
+    ],
+)
+def test_which_folders_mean_a_spec_is_retired(tmp_path, folder, retired):
+    vault = tmp_path / "Specs"
+    (vault / folder).mkdir(parents=True)
+    build_sample_spec_docx(str(vault / folder / "a.docx"))
+
+    report, _ = export_folder(str(vault))
+    assert report.to_json()["vault"]["filed_as_inactive"] == (1 if retired else 0)
+
+
+def test_the_survey_and_the_app_agree_on_what_retired_means():
+    """Two implementations of one rule, in two languages. If they drift,
+    the survey counts specs the filter does not hide, and nobody can tell
+    which number to believe."""
+    import re
+
+    from cobalt.structure_export import _RETIRED_FOLDER
+
+    ts = (
+        pathlib.Path(__file__).resolve().parents[2] / "frontend" / "src" / "specStatus.ts"
+    ).read_text()
+    match = re.search(r"const RETIRED_FOLDER = /(.+)/i;", ts)
+    assert match, "the frontend rule is not where this test expects it"
+    assert match.group(1) == _RETIRED_FOLDER.pattern, (
+        f"frontend {match.group(1)!r} != backend {_RETIRED_FOLDER.pattern!r}"
+    )

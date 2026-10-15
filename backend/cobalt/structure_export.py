@@ -63,10 +63,23 @@ def _spec_id(root: Path, path: Path) -> str:
     return hashlib.sha256(rel.encode("utf-8")).hexdigest()[:10]
 
 
+# Inactive and obsolete are one category: both mean the spec is out of use,
+# and the division uses both words. Kept character-for-character equivalent
+# to RETIRED_FOLDER in frontend/src/specStatus.ts -- a survey that counted
+# retired specs differently from the filter that hides them would be worse
+# than not counting them.
+_RETIRED_FOLDER = re.compile(r"(^|[^a-z])(inactive|obsolete)[sd]?([^a-z]|$)", re.IGNORECASE)
+
+
 def _is_inactive(root: Path, path: Path) -> bool:
-    """Matches the app's own Active/Inactive rule, per folder segment."""
+    """Matches the app's own Active/Inactive rule, per folder segment.
+
+    This used to be a bare substring test while the app required a word
+    boundary, so the two could disagree -- "Reinactivated" counted here and
+    not there.
+    """
     parts = path.relative_to(root).parts[:-1]
-    return any("inactive" in part.lower() for part in parts)
+    return any(_RETIRED_FOLDER.search(part) for part in parts)
 
 
 _PATHISH = re.compile(r"""["'`]?(?:[A-Za-z]:)?[^\s"'`]*[\\/][^\s"'`]*["'`]?""")

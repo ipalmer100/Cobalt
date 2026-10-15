@@ -214,14 +214,14 @@ export default function Sidebar({
           <button
             className={`status-toggle ${showActive ? "on" : ""}`}
             onClick={() => onStatusChange({ showActive: !showActive, showInactive })}
-            title="Specs outside an Inactive folder — applies to Mass Edit too"
+            title="Specs still in use — applies to Mass Edit too"
           >
             Active <span className="status-count">{sorted.length - inactiveCount}</span>
           </button>
           <button
             className={`status-toggle ${showInactive ? "on" : ""}`}
             onClick={() => onStatusChange({ showActive, showInactive: !showInactive })}
-            title="Specs filed under an Inactive Specifications folder — applies to Mass Edit too"
+            title="Specs filed under an Inactive or Obsolete folder — applies to Mass Edit too"
           >
             Inactive <span className="status-count">{inactiveCount}</span>
           </button>
