@@ -71,15 +71,37 @@ def _is_inactive(root: Path, path: Path) -> bool:
 _PATHISH = re.compile(r"""["'`]?(?:[A-Za-z]:)?[^\s"'`]*[\\/][^\s"'`]*["'`]?""")
 
 
-def _scrub(message: str) -> str:
+def _scrub(message: str, path: Path | None = None, base: Path | None = None) -> str:
     """Strip anything path-shaped out of an error message.
 
     python-docx reports a file it cannot open as "Package not found at
     '<full path>'", which would put the customer's folder tree into a report
     whose whole premise is that it holds none. The exception type and the
     shape of the message are what make it diagnosable; the path is not.
+
+    The regex alone is not enough, and the division report proved it: it
+    only recognises tokens containing a separator, and a real Windows path
+    is full of spaces, so every space-separated chunk between the slashes
+    survived. "Hearthside Food Solution (Previously Standard Candy
+    Company)" came through intact -- a customer name, in the one report
+    that promises not to carry any. So when the offending path is known it
+    is removed by name, component by component, and the pattern is left as
+    the backstop for anything else a message might quote.
     """
-    return _PATHISH.sub("<path>", message).strip()
+    scrubbed = message
+    if path is not None:
+        parts = [str(path), *path.parts]
+        if base is not None:
+            parts.append(str(base))
+            parts.extend(base.parts)
+        # Longest first, so a folder is removed before its own name can be
+        # matched as a fragment of something shorter.
+        for part in sorted({p for p in parts if len(p) > 2}, key=len, reverse=True):
+            scrubbed = re.sub(re.escape(part), "<path>", scrubbed, flags=re.IGNORECASE)
+    scrubbed = _PATHISH.sub("<path>", scrubbed)
+    # Several adjacent redactions read better as one.
+    scrubbed = re.sub(r"(<path>[\s\-_.,'\"()]*)+", "<path>", scrubbed)
+    return scrubbed.strip()
 
 
 def _labels(table: ParsedTable) -> list[str]:
@@ -375,7 +397,10 @@ def export_folder(
             spec = parse_document(str(path))
         except Exception as exc:  # noqa: BLE001 - one bad file must not stop the walk
             report.unreadable.append(
-                {"spec_id": spec_id, "error": _scrub(f"{type(exc).__name__}: {exc}")}
+                {
+                    "spec_id": spec_id,
+                    "error": _scrub(f"{type(exc).__name__}: {exc}", path=path, base=base),
+                }
             )
             if plant is not None:
                 plant.unreadable += 1

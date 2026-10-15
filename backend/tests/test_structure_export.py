@@ -145,6 +145,37 @@ def test_inactive_specs_are_counted_without_naming_the_folder(tmp_path):
     assert data["vault"]["filed_as_inactive"] == 1
 
 
+def test_an_unreadable_file_leaks_nothing_from_a_realistic_path(tmp_path):
+    """The division report showed this failing in the one way the original
+    test could not catch.
+
+    The scrubber only recognised tokens containing a separator, and that
+    test used "broken.docx" -- a single token in a short path. Real
+    libraries have paths full of spaces, so every chunk between the
+    slashes survived, and "Hearthside Food Solution (Previously Standard
+    Candy Company)" came through intact in a report that promises to carry
+    no customer names.
+    """
+    vault = tmp_path / "Specs"
+    folder = (
+        vault
+        / "Edinburgh Flexible Plant Documentation - Customer Specifications"
+        / "Hearthside Food Solution (Previously Standard Candy Company) Master Specification"
+    )
+    folder.mkdir(parents=True)
+    # Not a real .docx, so it fails to open exactly as the real ones did.
+    (folder / "A1234 - Hearthside Food Sol. - W.W. 5.25 x C.O. 5.75 - Rev 3.docx").write_bytes(b"nope")
+
+    report, _ = export_folder(str(vault))
+    text = json.dumps(report.to_json())
+
+    assert report.to_json()["vault"]["unreadable"] == 1
+    for secret in ("Hearthside", "Standard Candy", "Edinburgh", "Rev 3", "5.25"):
+        assert secret not in text, f"{secret!r} leaked out of the error message"
+    # Still says what went wrong.
+    assert "PackageNotFoundError" in text
+
+
 def test_an_unreadable_file_is_reported_and_the_walk_continues(tmp_path):
     vault = tmp_path / "Specs"
     vault.mkdir()
