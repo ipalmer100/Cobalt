@@ -31,3 +31,9 @@ local_fixtures/
 # with Cobalt (see packaging/README.md). Several hundred MB of third-party
 # binaries -- kept out of the repo deliberately.
 packaging/libreoffice/
+
+# The structure export's companion mapping (spec id -> real path). It is
+# the one output that names your files, and the export writes it next to
+# wherever you point --out, which is often inside this checkout. The
+# report itself is shareable; this is not, and must never be committed.
+*-local-map.json
