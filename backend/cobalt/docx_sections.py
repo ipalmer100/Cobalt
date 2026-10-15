@@ -39,9 +39,14 @@ BODY_SECTIONS = [
     "Blown Film Blender Verification",
     "Physical Attributes & Testing",
     "Slitting Information",
+    "Die Cut Information",
     "Packing Information",
     "Reporting Requirements",
     "Customer Sampling Requirements",
+    # In 68% of the division's specs and in every plant, which made it the
+    # single biggest thing Cobalt could not read. Measured over 16,768
+    # documents across seven plants.
+    "Quality Issues",
     "Revision History",
 ]
 
@@ -76,7 +81,13 @@ STANDARD_SECTIONS = [name for name in ALL_SECTIONS if name not in BLOWN_FILM_SEC
 # Materials, so a spec without one is worth saying so about; nine specs in
 # ten have no Extruder Distribution, and warning about that on all of them
 # would bury the warnings that mean something.
-OPTIONAL_SECTIONS = set(BLOWN_FILM_SECTIONS)
+OPTIONAL_SECTIONS = set(BLOWN_FILM_SECTIONS) | {
+    # Common but not universal: Quality Issues is in roughly two thirds of
+    # specs and Die Cut Information in a fifth, so warning about their
+    # absence would bury the warnings that mean something.
+    "Quality Issues",
+    "Die Cut Information",
+}
 
 
 def categorizing_sections(spec) -> list[str]:  # noqa: ANN001 - Spec, imported below
@@ -109,6 +120,22 @@ _SECTION_ALIASES = {
     "slitting instructions": "Slitting Information",
     "packing specifications": "Packing Information",
     "packaging information": "Packing Information",
+    # Hickory writes Packing Information as instructions. Too far from the
+    # canonical name for the misspelling rule to reach -- "instructions"
+    # against "information" is five edits -- so it is named here instead.
+    "packing instructions": "Packing Information",
+    "packaging instructions": "Packing Information",
+    # Die cutting, written eight ways across three plants.
+    "die cutting information": "Die Cut Information",
+    "die cut instructions": "Die Cut Information",
+    "die cut": "Die Cut Information",
+    # Terrebonne writes some headings in French only, with no English half
+    # for the bilingual rule to read. Accented spellings are matched here
+    # directly: the punctuation-insensitive comparison strips accents along
+    # with everything else, which would turn DECOUPAGE into "D COUPAGE".
+    "découpage": "Die Cut Information",
+    "decoupage": "Die Cut Information",
+    "localisation": "Locations",
 }
 
 for _alias, _canonical in _SECTION_ALIASES.items():
@@ -227,7 +254,15 @@ def _match_known(collapsed: str) -> tuple[str, str] | None:
         remainder = collapsed[len(key):]
         if remainder[0] not in _VARIANT_SEPARATORS and not remainder[0].isspace():
             continue
-        variant = remainder.strip().lstrip("".join(_VARIANT_SEPARATORS)).strip()
+        variant = remainder.strip()
+        # "Quality Issues / Problèmes de qualité" is the same section named
+        # twice, not a variant of it. Caught here as well as in the
+        # bilingual rule below, because a space before the slash lets the
+        # qualifier match run first and would otherwise label every one of
+        # those specs with a variant of "/ Problèmes de qualité".
+        if variant.startswith("/"):
+            return _NORMALIZED_BODY_SECTIONS[key], ""
+        variant = variant.lstrip("".join(_VARIANT_SEPARATORS)).strip()
         variant = variant.rstrip(")").strip()
         if not variant:
             continue

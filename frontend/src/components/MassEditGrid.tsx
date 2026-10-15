@@ -220,8 +220,24 @@ function buildColumnIndex(rows: ViewRow[]): ColumnIndex {
   // So the line is a hundredth, which lands between the two, and nothing
   // is hidden at all below 25 specs: at that size every column is worth
   // seeing, and one spec with an unusual heading is not yet noise.
+  // Capped, and the cap is the point.
+  //
+  // A proportional threshold works while the grid covers one site. Across
+  // a division it does not: a hundredth of 8,212 specs is 82, and a column
+  // that belongs to one plant's template is carried by fewer specs than
+  // that. Measured against the real division library, the uncapped rule
+  // hid "Core Inserts" (62 specs), "Minimum OD" (55), "End of Roll
+  // Indicator" (52), "Caliper" (47) and "Edge Protectors" (42) -- every
+  // one a real column, and for the plant that uses it, every column it
+  // has.
+  //
+  // A column belongs to a template, not to the library, so the line has to
+  // stop climbing once it passes the size of a plausible template. Twenty
+  // five does that: it only binds above 2,500 specs, so every smaller
+  // vault behaves exactly as before.
   const total = allSpecs.size;
-  const minSpecs = total < 25 ? 0 : Math.max(2, Math.ceil(total * 0.01));
+  const MAX_THRESHOLD = 25;
+  const minSpecs = total < 25 ? 0 : Math.min(MAX_THRESHOLD, Math.max(2, Math.ceil(total * 0.01)));
   const common = order.filter(
     // "Column 4" is not a column name -- it is what the parser writes when
     // the header cell is empty, so two specs' "Column 4" are not the same

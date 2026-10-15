@@ -47,10 +47,51 @@ RECOVERED = [
     ("Blown Film – Blender Verification on ALPINE Line", "Blown Film Blender Verification"),
 ]
 
+# Sections learned from a 16,768-document survey of seven plants, with the
+# spellings each plant actually uses.
+DIVISION = [
+    # In 68% of the division's specs and in every plant -- the single
+    # biggest thing Cobalt could not read.
+    ("Quality Issues", "Quality Issues", ""),
+    ("Quality Issues/Problèmes de qualité", "Quality Issues", ""),
+    ("Quality Issues/ Problèmes de qualité", "Quality Issues", ""),
+    ("Quality Issues / Problèmes de qualité", "Quality Issues", ""),
+    # Die cutting, written eight ways across three plants.
+    ("Die Cut Information", "Die Cut Information", ""),
+    ("Die Cutting Information", "Die Cut Information", ""),
+    ("Die-Cutting Information", "Die Cut Information", ""),
+    ("Die Cut", "Die Cut Information", ""),
+    ("Die Cut Instructions", "Die Cut Information", ""),
+    ("Die Cut – Hole Punch Information", "Die Cut Information", "Hole Punch Information"),
+    # French-only, with no English half for the bilingual rule to read.
+    ("DÉCOUPAGE", "Die Cut Information", ""),
+    ("Localisation", "Locations", ""),
+    # Hickory names Packing Information as instructions.
+    ("Packing Instructions", "Packing Information", ""),
+    ("PACKAGING INSTRUCTIONS", "Packing Information", ""),
+]
+
+
+@pytest.mark.parametrize("heading,section,variant", DIVISION)
+def test_a_heading_from_the_division_survey_is_placed(heading, section, variant):
+    assert classify_heading(heading) == (section, variant)
+
+
+def test_a_bilingual_heading_is_not_given_the_translation_as_a_variant():
+    """A space before the slash let the qualifier rule match first, which
+    would have labelled 84 specs with a variant of "/ Problèmes de
+    qualité" and split one section into two in every grid."""
+    for heading in (
+        "Quality Issues / Problèmes de qualité",
+        "Packing Information / Information d'emballage",
+    ):
+        section, variant = classify_heading(heading)
+        assert variant == "", f"{heading!r} produced variant {variant!r}"
+
+
 # Headings that must stay unclassified. Some are real sections of their own
 # that nobody has asked Cobalt to understand; some only look close.
 REFUSED = [
-    "Quality Issues",
     "McGuires",
     "General Information",
     "Finish Good Information",
@@ -60,6 +101,12 @@ REFUSED = [
     "Press Packing Information",
     "Materials",
     "Slitting(out-source ) Information",
+    # Named in the division survey and deliberately not learned: nobody has
+    # said what they are, and a wrong guess writes into the wrong table.
+    "G.C. Information:",
+    "Approvals",
+    "CLEVELAND SPLICING AND END OF ROLL INDICATORS",
+    "Web Path Diagram",
 ]
 
 

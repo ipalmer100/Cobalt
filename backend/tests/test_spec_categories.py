@@ -23,6 +23,9 @@ from cobalt.views import VIEW_NAMES, build_view
 
 from .fixtures.builder import build_sample_spec_docx
 
+# The eleven the business named, plus the two the division survey found:
+# Quality Issues in 68% of specs across all seven plants, and Die Cut
+# Information in roughly a fifth across three.
 EXPECTED_VIEWS = [
     "Product Description",
     "Locations",
@@ -31,9 +34,11 @@ EXPECTED_VIEWS = [
     "Process Routing",
     "Physical Attributes & Testing",
     "Slitting Information",
+    "Die Cut Information",
     "Packing Information",
     "Reporting Requirements",
     "Customer Sampling Requirements",
+    "Quality Issues",
     "Revision History",
 ]
 

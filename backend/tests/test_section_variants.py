@@ -37,9 +37,14 @@ def test_classify_recognizes_qualified_variants():
 
 
 def test_classify_escalates_rather_than_guessing():
-    """Anything that isn't clearly one of the 11 must go to a human, not get
-    filed somewhere plausible-looking."""
-    for heading in ["Press Specification", "Quality Issues", "S3 Machine Conditions"]:
+    """Anything that isn't clearly a known section must go to a human, not
+    get filed somewhere plausible-looking.
+
+    Quality Issues used to be in this list and is now a section of its own:
+    a survey of seven plants found it in 68% of specs, which made leaving
+    it unclassified the wrong call rather than the careful one.
+    """
+    for heading in ["Press Specification", "S3 Machine Conditions", "G.C. Information:"]:
         assert classify_heading(heading) == (None, ""), heading
 
 
