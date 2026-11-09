@@ -12,7 +12,9 @@ import xml.dom.minidom
 
 import pytest
 
-PACKAGING = pathlib.Path(__file__).resolve().parents[2] / "packaging"
+REPO = pathlib.Path(__file__).resolve().parents[2]
+PACKAGING = REPO / "packaging"
+INSTALLER = REPO / "install_cobalt.bat"
 MANIFEST = PACKAGING / "cobalt.manifest"
 VERSION_INFO = PACKAGING / "version_info.txt"
 
@@ -103,11 +105,19 @@ def test_the_no_exe_launcher_points_at_the_same_entry_point():
 # successful build would have printed an error and a failed one would have
 # jumped to the wrong handler.
 
-BATCH_SCRIPTS = ["build_windows_exe.bat", "run_cobalt.bat", "create_shortcut.bat"]
+BATCH_SCRIPTS = {
+    "build_windows_exe.bat": PACKAGING / "build_windows_exe.bat",
+    "run_cobalt.bat": PACKAGING / "run_cobalt.bat",
+    "create_shortcut.bat": PACKAGING / "create_shortcut.bat",
+    # At the repo root rather than in packaging/, because it is the one
+    # file a user downloads on its own and it has to be the first thing
+    # visible on the GitHub page.
+    "install_cobalt.bat": INSTALLER,
+}
 
 
 def _lines(name):
-    return (PACKAGING / name).read_text().splitlines()
+    return BATCH_SCRIPTS[name].read_text().splitlines()
 
 
 @pytest.mark.parametrize("script", BATCH_SCRIPTS)
@@ -178,3 +188,94 @@ def test_the_build_can_sign_but_does_not_require_it():
     # Timestamped, or every signed copy stops verifying the day the
     # certificate expires.
     assert "/tr " in build and "/td " in build
+
+
+# --- The browser-only installer ------------------------------------------
+# install_cobalt.bat is the one file a user downloads by itself, from a
+# GitHub page, and double-clicks. Nothing around it can be assumed: no
+# clone, no repo, no terminal, and no second chance to read an error
+# message that scrolled past before the window closed.
+
+
+def test_the_installer_downloads_the_repository_it_lives_in():
+    """A hardcoded owner/repo in a file people download and keep is the one
+    thing in it that silently rots -- it would quietly install someone
+    else's project, or nothing at all."""
+    text = INSTALLER.read_text()
+    assert "ipalmer100/Cobalt" in text
+    assert "codeload.github.com" in text, "needs a direct zip URL, not a git clone"
+    assert "git clone" not in text, "the whole point is that Git is not required"
+
+
+def test_the_installer_builds_the_environment_the_launcher_expects():
+    """It sets up what run_cobalt.bat then starts. If the two disagree about
+    where the virtualenv lives, the install finishes and the shortcut fails
+    -- the worst order for those two events."""
+    installer = INSTALLER.read_text()
+    launcher = (PACKAGING / "run_cobalt.bat").read_text()
+    build = (PACKAGING / "build_windows_exe.bat").read_text()
+
+    assert "packaging\\.build-venv" in installer
+    assert "packaging\\.build-venv" in launcher
+    # Same stamp file the build writes, so a venv made by either is
+    # recognised (and rebuilt if the folder moved) by the other.
+    assert ".built-at" in installer and ".built-at" in build
+    # And the frontend run_cobalt.bat refuses to start without.
+    assert "npm run build" in installer
+
+
+def test_the_installer_does_not_claim_to_build_the_exe():
+    """The packaged executable is still built by build_windows_exe.bat on a
+    Windows machine. Someone who ran this and expected an .exe would go
+    looking for one that was never made."""
+    text = INSTALLER.read_text()
+    assert "build_windows_exe.bat" in text, "it has to say where the exe comes from"
+    assert "pyinstaller" not in text.lower()
+
+
+@pytest.mark.parametrize("marker", ["exit /b 1", "goto :end"])
+def test_every_way_out_of_the_installer_waits_for_the_user(marker):
+    """Double-clicked from Explorer, the console window closes the instant
+    the script ends. Without a pause before each exit the user sees a window
+    flash and nothing else -- including on every failure path, which are the
+    ones that have something to say."""
+    lines = [line.strip().lower() for line in _lines("install_cobalt.bat")]
+    for index, line in enumerate(lines):
+        if line != marker:
+            continue
+        earlier = [l for l in lines[:index] if l and not l.startswith("rem ")]
+        assert earlier and earlier[-1] == "pause", (
+            f"'{marker}' at line {index + 1} is not preceded by a pause; "
+            f"the line above it is {earlier[-1] if earlier else '(nothing)'!r}"
+        )
+
+
+def test_the_installer_checks_prerequisites_before_downloading():
+    """Forty megabytes and a four-minute npm install are a long way to go to
+    find out Python is missing."""
+    lines = [line.strip().lower() for line in _lines("install_cobalt.bat")]
+    first_check = min(i for i, line in enumerate(lines) if line.startswith("where py "))
+    first_download = min(i for i, line in enumerate(lines) if "codeload.github.com" in line)
+    assert first_check < first_download
+
+
+def test_the_installer_keeps_a_bundled_libreoffice_across_updates():
+    """Not in the download, 400 MB, and put there by hand so .doc
+    conversion works on a machine with nothing installed. An update that
+    deletes it costs someone an afternoon they already spent."""
+    text = INSTALLER.read_text()
+    assert "packaging\\libreoffice" in text
+    assert "KEEP_LO" in text
+
+
+def test_the_installer_looks_for_the_folder_github_actually_produces():
+    """A codeload zip unpacks to <repo>-<branch>, so the folder the script
+    then moves into place is derived from the same two values as the URL.
+    Verified by hand against the real download: the zip's single top-level
+    folder is Cobalt-main. Spelling it out anywhere else means a rename
+    breaks the install after the download rather than before it."""
+    text = INSTALLER.read_text()
+    assert 'set "REPO=ipalmer100/Cobalt"' in text
+    assert 'set "BRANCH=main"' in text
+    repo_name = "ipalmer100/Cobalt".split("/")[1]
+    assert f'set "SRC=%WORK%\\{repo_name}-%BRANCH%"' in text

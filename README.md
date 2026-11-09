@@ -17,6 +17,42 @@ specs already live on.
 
 ---
 
+## Install it
+
+**[⬇ Download `install_cobalt.bat`](https://github.com/ipalmer100/Cobalt/releases/latest/download/install_cobalt.bat)** — then double-click it.
+
+That is the whole install. No Git, no clone, no terminal, no administrator
+rights. It downloads the current Cobalt, sets it up, and puts a **Cobalt**
+shortcut on your Desktop. Run the same file again any time to update to the
+latest version.
+
+It needs two things already on the machine, and tells you if they are
+missing before downloading anything:
+
+- **Python 3.11+** — https://www.python.org/downloads/ (tick *Add python.exe
+  to PATH*)
+- **Node.js 20+** — https://nodejs.org/ (LTS)
+
+Both install per-user without admin rights, though a managed laptop may
+need IT to approve them.
+
+Installs to `%LOCALAPPDATA%\Cobalt` — deliberately not the Desktop or
+Documents, which are OneDrive-synced here, and an install folder holds tens
+of thousands of small files that would be uploaded one at a time. Your spec
+files are never touched: they stay in their own folder, which the installer
+does not go near.
+
+> If the download link 404s, the release has not been cut yet — take the
+> file straight from the repo instead: open
+> [`install_cobalt.bat`](install_cobalt.bat) and use GitHub's **Download raw
+> file** button (the ⤓ icon, top right of the file view).
+
+This gives you the run-from-source install. **`Cobalt.exe` is built
+separately** and that process is unchanged — see
+[`packaging/README.md`](packaging/README.md).
+
+---
+
 ## What it does
 
 - **Reads a whole library at once.** Subfolders included — one pick covers
@@ -54,15 +90,21 @@ specs already live on.
 
 ## Opening it
 
-Two ways to run it, plus a dev setup. The first two are the same
-application — the same backend serving the same interface on one local
-port, which your browser displays. Pick by what is installed on the
-machine that will run it, not by what you want it to do.
+Three ways to run it, plus a dev setup. They are the same application —
+the same backend serving the same interface on one local port, which your
+browser displays. Pick by what is installed on the machine that will run
+it, not by what you want it to do.
 
-### The desktop app — double-click, no terminal
+### The one-file installer — browser only
 
-For anyone who just wants to use Cobalt. Nothing needs installing on the
-machine that runs it: no Python, no Node.js, no terminal.
+See [Install it](#install-it) above. Download one `.bat`, double-click,
+get a Desktop shortcut. This is the route to hand someone who just needs
+Cobalt working.
+
+### The packaged app — double-click, nothing installed at all
+
+Nothing at all needs installing on the machine that runs it — not even
+Python or Node — but somebody has to build it first, on Windows.
 
 1. Get the `Cobalt` folder (built once per release — see
    [`packaging/README.md`](packaging/README.md), or ask whoever built it).
