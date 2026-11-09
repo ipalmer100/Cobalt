@@ -1,11 +1,272 @@
 # Cobalt
 
-"Obsidian for specs" — point it at a folder of flexible-packaging customer
-spec `.docx` files and get a live, instantly-synced view of all of them,
-plus a tabular mass-edit grid per section (Bill of Materials, Slitting
-Information, etc.) instead of opening one Word document at a time.
+**Read and mass-edit a library of packaging specification documents
+without opening them one at a time.**
 
-## How it works
+Point Cobalt at a folder of customer spec `.docx` files — a plant's
+library, a customer's folder, a whole division's archive — and everything
+inside it, however deeply nested, is indexed and live. Change a material
+across 200 specs from one grid instead of opening 200 Word documents.
+Nothing is imported, exported or converted into a database: the `.docx`
+files on the network drive stay the originals, and Cobalt edits them in
+place.
+
+It runs on your own machine against your own folder. There is no server to
+stand up, no account to create, and nothing leaves the network drive the
+specs already live on.
+
+---
+
+## What it does
+
+- **Reads a whole library at once.** Subfolders included — one pick covers
+  a library organised by customer. A 1,000-spec folder opens in about 15
+  seconds, 15,000 in about three minutes.
+- **Mass Edit**: one section of every spec as a single table — Bill of
+  Materials across the library, Slitting Information across the library —
+  sortable, filterable per column, and editable in place. Edits write
+  straight back into the Word files.
+- **Spec Detail**: one spec, every section, exactly as the document has
+  it, editable field by field.
+- **Finds the specs you mean.** Search by spec number, customer, file name
+  or folder; filter by customer, by spec category, and by
+  active/inactive — a spec filed under an *Inactive* or *Obsolete* folder
+  is hidden from both the list and the grid with one toggle.
+- **Creates a new spec** by duplicating an existing one or from a blank
+  template, and refuses a spec number another spec in the folder already
+  carries.
+- **Keeps revision numbering honest.** Revision History and the header's
+  Revision # can only change together, through the explicit "Add Revision"
+  action — no data edit ever touches either. **Revision Check** lists every
+  spec where the two have drifted apart.
+- **Logs every change it makes** to `.cobalt/audit_log.jsonl` inside the
+  folder — who, when, which spec, what changed — separately from the
+  documents' own Revision History.
+- **Handles legacy `.doc` files** by converting them to `.docx` in the
+  background on first sight, leaving the original untouched. Half of the
+  division's archive is still `.doc`.
+- **Reads paths Windows normally can't.** A customer folder deep enough to
+  push a path past Windows' 260-character limit used to look like a corrupt
+  file; it opens.
+- **Light and dark**, following the system or set explicitly.
+
+---
+
+## Opening it
+
+Two ways to run it, plus a dev setup. The first two are the same
+application — the same backend serving the same interface on one local
+port, which your browser displays. Pick by what is installed on the
+machine that will run it, not by what you want it to do.
+
+### The desktop app — double-click, no terminal
+
+For anyone who just wants to use Cobalt. Nothing needs installing on the
+machine that runs it: no Python, no Node.js, no terminal.
+
+1. Get the `Cobalt` folder (built once per release — see
+   [`packaging/README.md`](packaging/README.md), or ask whoever built it).
+   Copy the **whole folder**; `Cobalt.exe` needs its `_internal` sibling.
+2. Double-click **`Cobalt.exe`** inside it.
+3. A console window opens — leave it open, it *is* the running app — and
+   your browser opens to Cobalt.
+4. Click **Browse…**, pick your folder of specs, and click **Open Vault**.
+
+Closing the console window stops the app. Double-clicking the exe again
+while it is already running just brings your browser back to it.
+
+On a managed corporate PC the first launch may be blocked — by SmartScreen,
+by Defender's attack-surface-reduction rules, or by AppLocker. Each looks
+different and each has a different fix; the table in
+[`packaging/README.md`](packaging/README.md#running-it-on-a-managed-pc)
+tells them apart. The usual answer is `packaging\run_cobalt.bat`, which
+starts the identical app through Python so there is no new executable for
+allow-listing to object to, and `packaging\create_shortcut.bat`, which puts
+a double-clickable **Cobalt** shortcut on the Desktop pointing at it.
+Cobalt has never needed administrator rights.
+
+### From the command line
+
+For a machine with Python and Node, or for running it from source. One
+command, one port, one browser tab — the backend serves the built frontend
+itself, so there is no second terminal and no dev server:
+
+```bash
+cd frontend && npm install && npm run build && cd ..
+cd backend && pip install -e . && python -m cobalt.desktop
+```
+
+It prints the port, opens your browser, and says whether `.doc` conversion
+is available:
+
+```
+Starting Cobalt...
+Opening http://127.0.0.1:8765/ in your browser.
+.doc conversion: available (/usr/bin/soffice)
+```
+
+Then click **Browse…** and pick your folder, the same as above. Needs
+Python ≥3.11 and Node once, on the machine you run it from. LibreOffice is
+optional — without it `.docx` specs work normally and each `.doc` shows a
+clear per-file error instead of converting.
+
+Leave that terminal open while you use the app; closing it stops the
+server.
+
+There are also two command-line tools that answer a question about a
+library without opening the app at all — a revision-numbering audit and a
+structure survey. Both are below, under
+[Checking revision numbering](#checking-revision-numbering) and
+[Describing a library without exporting it](#describing-a-library-without-exporting-it).
+
+### For working on Cobalt itself
+
+Run the API and Vite separately so both hot-reload:
+
+```bash
+cd backend
+pip install -e .
+python -m uvicorn cobalt.api:app --reload
+```
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open the printed Vite URL (`:5173`), which talks to the backend on `:8000`
+via `frontend/.env.development`.
+
+---
+
+## Finding your way around
+
+Five tabs across the top, and a sidebar listing every spec in the folder.
+
+| Tab | What it's for |
+| --- | --- |
+| **Spec Detail** | One spec, every section, as the document has it. Edit a field, or add a revision. |
+| **Mass Edit** | One section across every spec, as a grid. Pick the section from the dropdown. |
+| **Audit Log** | Every change Cobalt has made to this folder — who, when, which spec. |
+| **Revision Check** | Specs whose header Revision # and Revision History disagree. Report only. |
+| **Exceptions** | Tables whose heading Cobalt would not guess a section for, waiting for someone to allocate them. |
+
+In the sidebar: a search box (spec number, customer, file name or folder),
+and — each appearing only when the folder actually holds more than one of
+the thing it filters — a customer dropdown, a Category control, and the
+Active/Inactive toggles. The filters apply everywhere: a spec hidden in
+the list is hidden in Mass Edit too, and each control shows its count, so
+you can see that nothing has gone missing, it has only moved.
+
+**+ New Spec** creates one, by duplicating an existing spec or from the
+blank template. Duplicating carries the data tables over as a starting
+point and resets Spec #, Customer and Revision History. A spec number
+already used in the open folder is refused, naming the spec that holds it.
+
+**Your name**, top right, is attached to every write for the audit log.
+There is no login — it is a per-browser display name, not authentication.
+Beside it, the appearance control cycles Match system → Light → Dark.
+
+---
+
+## Checking revision numbering
+
+A spec states its revision twice — the `Revision #` field in Product
+Description, and the last row of Revision History — and those must agree.
+When they drift, the document no longer establishes which version it is.
+
+The **Revision Check** tab lists every spec where they don't, and the two
+conditions that cause it: a revision number that repeats or goes backwards,
+and a Revision History ending in a blank row. It reports only. Renumbering
+a regulated document is the spec owner's decision, so each finding says
+what both sources claim and what the next revision would continue from,
+and stops there.
+
+Same check without opening the app, for sweeping an archive:
+
+```
+cd backend
+python -m cobalt.revision_audit "/path/to/specs"
+```
+
+Exits non-zero if anything was flagged or couldn't be read, so it works in
+a scheduled job.
+
+Worth running once over any folder edited by a Cobalt build before
+`0c1e54b`: that build took the next revision number from the last row of
+Revision History without checking whether the row carried one, so a spec
+whose table ends in a blank row was revised from `4` to `01`.
+
+## Describing a library without exporting it
+
+Cobalt's parsing bugs are shape bugs — a data row read as a header, a
+merged banner that leaves every column unmapped, a section worded
+differently in one plant's template. Finding them needs the skeleton of a
+large real library, and none of it needs a single cell value.
+
+```
+cd backend
+python -m cobalt.structure_export "/path/to/specs" --out cobalt-structure.json
+```
+
+It writes two files:
+
+| File | Contents | Send it? |
+| --- | --- | --- |
+| `cobalt-structure.json` | Section headings as written, table shapes, column and field labels, column/row counts, how many specs share each layout, per-column fill rates and text lengths | Yes — this is the one to share |
+| `cobalt-structure-local-map.json` | Which hashed id is which file | **No** — it names your files; it exists so you can trace a finding back locally |
+
+Every cell value is excluded, and so is every path: specs are identified by
+a hash of their location, stable between runs. Even the error text for an
+unreadable file is scrubbed of anything path-shaped, because python-docx
+reports a bad file by quoting its full path.
+
+Specs are grouped by identical layout, so a library of thousands collapses
+to a few dozen entries — a 120-spec vault produces 7 KB. The groups are the
+useful part: a template used by 1,200 specs and a one-off used by three sit
+side by side, and the one-offs are usually where the parser went wrong.
+
+`suspect_labels` lists column names that read like data rather than
+headers — empty header cells (`Column 2`), the same text repeated across
+columns (`Target (2)`), placeholders (`--`). Those are the misparsed
+tables, and they are also the one route by which content can reach the
+report: where a header was mis-detected, the "labels" really are that
+spec's data. Worth reading that section before sending the file on.
+
+`--limit N` stops after N specs, for a quick sample.
+
+### Several plants at once
+
+Pointed at a division folder — plant folders over customer folders —
+`--by-plant` adds a per-plant table, because that is the unit a rollout is
+planned in and divisional totals answer none of its questions:
+
+```
+python -m cobalt.structure_export "/path/to/division" --out division.json --by-plant
+```
+
+```
+  Plant                                        specs   .doc  layouts  unknown   bad
+  Elk Grove Flexible Plant Documentation          20      0        1        0     0
+  Waco Flexible Plant Documentation - Cus...      14      5        1        1     0
+  Franklin OH Plant Specifications                 9      0        2        0     0
+```
+
+`.doc` says which plants need LibreOffice at all, `layouts` how varied
+their templates are, and `unknown` how much triaging each needs before
+anyone there uses Cobalt.
+
+It is off by default, and it is the only option that puts a folder name in
+the report: that top-level folder is a plant only when the path is rooted
+at a division. Rooted at one site it is a customer, so this stays
+something the caller turns on knowingly.
+
+## Under the hood
+
+Everything below is for working on Cobalt rather than using it.
+
+### How it works
 
 - **`backend/cobalt/docx_sections.py`** — reads a spec: finds each of
   the canonical sections by locating its title paragraph and taking the table
@@ -37,13 +298,26 @@ Information, etc.) instead of opening one Word document at a time.
   `vault.py` calls this automatically and silently the first time it sees
   a `.doc` without a same-named `.docx` next to it — see "Legacy `.doc`
   handling" below; there's no manual "convert" action anywhere in the UI.
+- **`backend/cobalt/paths.py`** — the `\\?\` prefix that lets Windows
+  open a path longer than 260 characters. Applied at every filesystem
+  call rather than stored, so paths stay ordinary everywhere else. Without
+  it a spec in a deep customer folder reports
+  `PackageNotFoundError`, which reads as "this is not a Word file" when
+  the truth is "Windows would not open this path" — three specs in the
+  division survey were diagnosed as corrupt on that basis and were fine.
 - **`backend/cobalt/creation.py`** — creates a new spec, either by
   duplicating an existing one (data tables carry over as a starting
   point; Spec #, Customer, and Revision History reset) or from the
   bundled blank template (`cobalt/templates/blank_spec_template.docx`
   — a synthetic placeholder with no real branding; swap in a real blank
   Toppan master template by regenerating via
-  `scripts/build_blank_template.py` or replacing the file directly).
+  `scripts/build_blank_template.py` or replacing the file directly). Also
+  owns the spec-number guardrail: `find_number_conflicts` says which specs
+  in the folder already carry a number, and `api.py` refuses creation with
+  a 409 rather than letting two documents answer to one number. The
+  browser runs the same rule (`frontend/src/specNumber.ts`) to disable the
+  button as you type, but the server is the authority — a browser's index
+  can be seconds stale.
 - **`backend/cobalt/audit_log.py`** — a second, independent change log,
   entirely separate from Revision History. Every write the app makes
   (mass-edit cell/field, row add, revision, conversion, new spec) is
@@ -52,15 +326,18 @@ Information, etc.) instead of opening one Word document at a time.
   convention) so it travels with the folder and is shared by anyone who
   opens it. `GET /audit-log` reads it back; the frontend's "Audit Log"
   tab shows it as a table (time, who, spec, what changed).
-- **`frontend/`** — a small React/Vite shell: sidebar file list with a
-  "New Spec" action (a legacy `.doc` entry shows its automatic
-  conversion's live status — "Converting to .docx…", then either
-  disappears once the `.docx` is ready or shows an error — with no click
-  required), a read-only Spec Detail view, the tabular Mass Edit grid, and the
-  Audit Log tab. A "Your name" field in the top bar (persisted in
-  `localStorage`) is attached to every write for the audit log's "who" —
-  there's no login system, so this is a per-browser display name, not
-  authentication.
+- **`frontend/`** — a React/Vite shell: a virtualized sidebar file list
+  with search, customer, category and active/inactive filters and a "New
+  Spec" action (a legacy `.doc` entry shows its automatic conversion's
+  live status — "Converting to .docx…", then either disappears once the
+  `.docx` is ready or shows an error — with no click required), an
+  editable Spec Detail view, the virtualized Mass Edit grid, and the Audit
+  Log, Revision Check and Exceptions tabs. A "Your name" field in the top
+  bar (persisted in `localStorage`) is attached to every write for the
+  audit log's "who" — there's no login system, so this is a per-browser
+  display name, not authentication. The active/inactive rule lives in
+  `src/specStatus.ts` and is shared by the sidebar and the grid, so a spec
+  hidden in one is hidden in both.
 
 ### Legacy `.doc` handling is automatic, one-time, and silent
 
@@ -155,7 +432,7 @@ category decides what the app offers:
 | **Standard** | — | yes | yes |
 | **Blown Film** | Extruder Distribution, Blown Film Blender Verification | yes | no |
 
-Mass Edit is the standard category, and its views are exactly the eleven
+Mass Edit is the standard category, and its views are exactly the thirteen
 standard sections. A Blown Film spec is still fully readable and fully
 editable — Spec Detail shows every one of its sections, including the ones
 that categorised it, and saving works the same way with the same revision
@@ -212,19 +489,25 @@ varies is which of a document's tables feed each one.
     when two sections are both in range, because a heading guessed
     wrong writes into the wrong table.
 - **Everything else goes to the Exceptions queue rather than being
-  guessed at.** `Press Specification`, `Quality Issues`, `S3 Machine
-  Conditions` and the like are shown with a preview of their contents
+  guessed at.** `Press Specification`, `S3 Machine Conditions` and the
+  like are shown with a preview of their contents
   and the specs they appear in, and a human allocates each to a
   canonical section (or marks it "not a spec section"). Guessing here would be worse
   than not reading the table at all — a Press Specification quietly
   filed under Process Routing corrupts what everyone reads off the grid,
   invisibly.
 - Decisions are keyed by heading text and saved in the vault
-  (`.cobalt/section_mappings.json`), so allocating `Quality Issues`
+  (`.cobalt/section_mappings.json`), so allocating `Press Specification`
   once covers every spec in the archive that uses that heading, for
   everyone who opens the folder, and survives reopening. They're
   reversible (Undo returns the heading to the queue) and logged to the
   audit log.
+- **A heading common enough across the division becomes canonical rather
+  than staying in the queue.** `Quality Issues` and `Die Cut Information`
+  arrived that way: the structure survey found them in roughly 5,600 and
+  1,550 specs respectively, across every plant, which is a section the
+  templates have and Cobalt did not — not an exception for each plant to
+  triage separately.
 
 One related parsing detail: a table may open with a merged banner row
 above its real header (FR0282's duplex Process Routing starts with a
@@ -238,8 +521,8 @@ By design, editing data (Mass Edit grid, any field) never touches
 Revision History or bumps Revision # — logging a revision is a separate,
 manual action ("Add Revision" on a spec's detail view, or `POST
 /spec/revision`), matching how the org's compliance process already
-works, and keeping table 11 free of the "changed X to Y" busywork a fully
-automatic log would generate on every keystroke.
+works, and keeping Revision History free of the "changed X to Y" busywork
+a fully automatic log would generate on every keystroke.
 
 What *is* enforced is that Product Description's Revision # and Revision
 History's last row can never drift apart: both endpoints for changing
@@ -258,156 +541,6 @@ path that can ever change either value is `apply_revision()`, which
 changes them together, atomically — see `cobalt/views.py`
 (`is_view_editable`, `readonly_columns_for`) and the guard in
 `cobalt/api.py` (`_require_not_revision_locked`).
-
-## Running it
-
-### Quickest way to try it on your own folder
-
-One command, one port, one browser tab — the backend serves the built
-frontend itself, so there's no second terminal and no dev server:
-
-```
-cd frontend && npm install && npm run build && cd ..
-cd backend && pip install -e . && python -m cobalt.desktop
-```
-
-It prints the port, opens your browser, and tells you whether `.doc`
-conversion is available:
-
-```
-Starting Cobalt...
-Opening http://127.0.0.1:8765/ in your browser.
-.doc conversion: available (/usr/bin/soffice)
-```
-
-Click **Browse…** and pick your folder. Needs Python ≥3.11 and Node once,
-on the machine you run it from. LibreOffice is optional — without it
-`.docx` specs work normally and each `.doc` shows a clear per-file error
-instead of converting.
-
-Leave that window open while you use the app; closing it stops the
-server.
-
-### Two-terminal dev setup
-
-For working *on* Cobalt, run the API and Vite separately so both
-hot-reload:
-
-```
-cd backend
-pip install -e .
-python -m uvicorn cobalt.api:app --reload
-```
-
-```
-cd frontend
-npm install
-npm run dev
-```
-
-Open the printed Vite URL (`:5173`), which talks to the backend on
-`:8000` via `frontend/.env.development`.
-
-### Packaged desktop app (Windows)
-
-For a double-click desktop app — no Python/Node install needed on the
-machine that *runs* it, and optionally LibreOffice bundled too so `.doc`
-conversion works with nothing extra installed there — see
-**[`packaging/README.md`](packaging/README.md)**. It's the same backend
-and frontend as above, bundled with PyInstaller; building it still
-requires Python/Node once, on whichever Windows machine produces it.
-
-## Checking revision numbering
-
-A spec states its revision twice — the `Revision #` field in Product
-Description, and the last row of Revision History — and those must agree.
-When they drift, the document no longer establishes which version it is.
-
-The **Revision Check** tab lists every spec where they don't, and the two
-conditions that cause it: a revision number that repeats or goes backwards,
-and a Revision History ending in a blank row. It reports only. Renumbering
-a regulated document is the spec owner's decision, so each finding says
-what both sources claim and what the next revision would continue from,
-and stops there.
-
-Same check without opening the app, for sweeping an archive:
-
-```
-cd backend
-python -m cobalt.revision_audit "/path/to/specs"
-```
-
-Exits non-zero if anything was flagged or couldn't be read, so it works in
-a scheduled job.
-
-Worth running once over any folder edited by a Cobalt build before
-`0c1e54b`: that build took the next revision number from the last row of
-Revision History without checking whether the row carried one, so a spec
-whose table ends in a blank row was revised from `4` to `01`.
-
-## Describing a library without exporting it
-
-Cobalt's parsing bugs are shape bugs — a data row read as a header, a
-merged banner that leaves every column unmapped, a section worded
-differently in one plant's template. Finding them needs the skeleton of a
-large real library, and none of it needs a single cell value.
-
-```
-cd backend
-python -m cobalt.structure_export "/path/to/specs" --out cobalt-structure.json
-```
-
-It writes two files:
-
-| File | Contents | Send it? |
-| --- | --- | --- |
-| `cobalt-structure.json` | Section headings as written, table shapes, column and field labels, column/row counts, how many specs share each layout, per-column fill rates and text lengths | Yes — this is the one to share |
-| `cobalt-structure-local-map.json` | Which hashed id is which file | **No** — it names your files; it exists so you can trace a finding back locally |
-
-Every cell value is excluded, and so is every path: specs are identified by
-a hash of their location, stable between runs. Even the error text for an
-unreadable file is scrubbed of anything path-shaped, because python-docx
-reports a bad file by quoting its full path.
-
-Specs are grouped by identical layout, so a library of thousands collapses
-to a few dozen entries — a 120-spec vault produces 7 KB. The groups are the
-useful part: a template used by 1,200 specs and a one-off used by three sit
-side by side, and the one-offs are usually where the parser went wrong.
-
-`suspect_labels` lists column names that read like data rather than
-headers — empty header cells (`Column 2`), the same text repeated across
-columns (`Target (2)`), placeholders (`--`). Those are the misparsed
-tables, and they are also the one route by which content can reach the
-report: where a header was mis-detected, the "labels" really are that
-spec's data. Worth reading that section before sending the file on.
-
-`--limit N` stops after N specs, for a quick sample.
-
-### Several plants at once
-
-Pointed at a division folder — plant folders over customer folders —
-`--by-plant` adds a per-plant table, because that is the unit a rollout is
-planned in and divisional totals answer none of its questions:
-
-```
-python -m cobalt.structure_export "/path/to/division" --out division.json --by-plant
-```
-
-```
-  Plant                                        specs   .doc  layouts  unknown   bad
-  Elk Grove Flexible Plant Documentation          20      0        1        0     0
-  Waco Flexible Plant Documentation - Cus...      14      5        1        1     0
-  Franklin OH Plant Specifications                 9      0        2        0     0
-```
-
-`.doc` says which plants need LibreOffice at all, `layouts` how varied
-their templates are, and `unknown` how much triaging each needs before
-anyone there uses Cobalt.
-
-It is off by default, and it is the only option that puts a folder name in
-the report: that top-level folder is a plant only when the path is rooted
-at a division. Rooted at one site it is a customer, so this stays
-something the caller turns on knowingly.
 
 ## Testing
 
@@ -620,6 +753,16 @@ SQL by connection string).
 - One row in Slitting Information sometimes stacks two labels
   (`Core Tags:` / `Splice Code:`) inside a single physical cell; the
   parser currently reads that as one combined field instead of two.
+- **Packing Information and Slitting Information are laid out two
+  different ways across the division, and Cobalt reads one of them wrong.**
+  The structure survey of 8,212 specs found Packing Information parsing as
+  a `Label:`/value grid in 7,985 specs and as a header-plus-rows table in
+  639 (Slitting: 6,957 and 78). In the minority shape the first data row is
+  read as the header, so that spec's own values become column names — 261
+  distinct ones, which is why the Mass Edit grid for those sections shows
+  columns nobody recognises. The two shapes need telling apart before the
+  grid for those sections can be trusted division-wide; everything else
+  parses consistently.
 - Some tables can't be allocated automatically and wait in the exception
   queue until someone decides (see "Table classification" above). Until
   then their rows aren't in any view — visible and pending, never
