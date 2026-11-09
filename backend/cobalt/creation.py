@@ -14,6 +14,7 @@ Both refuse to overwrite an existing destination file.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterable
 from datetime import date as date_cls
 from pathlib import Path
 
@@ -27,6 +28,52 @@ BLANK_TEMPLATE_PATH = Path(__file__).resolve().parent / "templates" / "blank_spe
 
 class CreationError(RuntimeError):
     pass
+
+
+class SpecNumberInUseError(CreationError):
+    """The number asked for already identifies a spec in the open folder.
+
+    Separate from the other creation failures because it is the only one
+    the caller can resolve by choosing a different number, and because it
+    answers with 409 rather than 422.
+    """
+
+    def __init__(self, spec_number: str, paths: list[str]):
+        self.spec_number = spec_number
+        self.paths = paths
+        super().__init__(f"Spec number {spec_number} is already in use")
+
+
+def normalize_spec_number(value: str | None) -> str:
+    """The form two spec numbers are compared in.
+
+    Case and surrounding whitespace are how the same number gets typed two
+    different ways, not how two specs get told apart: nobody filing
+    ``eg1001`` means a different document from ``EG1001``. Inner runs of
+    whitespace collapse for the same reason -- a number split across a line
+    in the source table reads back with a newline in it.
+    """
+    return " ".join((value or "").split()).upper()
+
+
+def find_number_conflicts(
+    numbered_paths: Iterable[tuple[str, str | None]], spec_number: str
+) -> list[str]:
+    """Which specs in the folder already carry this number.
+
+    Deliberately a list and not a bool: refusing a number without saying
+    which document holds it leaves the user guessing, and a library *can*
+    already contain the same number twice (nothing stopped it before), so
+    naming every holder is more honest than naming the first.
+
+    Takes the numbers rather than reading the files, so the check costs
+    nothing on top of the index the vault already holds, and so it can be
+    tested without a vault.
+    """
+    wanted = normalize_spec_number(spec_number)
+    if not wanted:
+        return []
+    return [path for path, number in numbered_paths if normalize_spec_number(number) == wanted]
 
 
 def _spec_number_label(pd_fields: dict[str, str]) -> str | None:

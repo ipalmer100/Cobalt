@@ -1874,14 +1874,104 @@ textarea.detail-editor.dirty {
   font-size: 13px;
 }
 
+/* A list of real buttons rather than a native <select size>. A sized
+   select keeps its own idea of which row is highlighted, and the browser
+   silently moves it when the option list changes -- filter down to one
+   match and the browser highlights it without firing a change event, so
+   the list showed a selected spec that the app did not have selected, and
+   clicking the already-highlighted row fires nothing either. That was a
+   dead end: the picker looked answered and Create refused anyway. Here the
+   selected row is drawn from the app's own state, so the two cannot
+   disagree. */
 .source-list {
   width: 100%;
-  padding: 4px;
+  /* Height is set inline, from the measured rows -- see NewSpecModal. */
+  overflow-y: auto;
+  position: relative;
   border: 1px solid var(--border);
   border-radius: 0 0 6px 6px;
   background: var(--bg);
   color: var(--text);
   font-size: 13px;
+}
+
+.source-option {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.source-option:hover {
+  background: var(--bg-hover);
+}
+
+.source-option.selected {
+  background: var(--accent);
+  color: white;
+}
+
+.source-option-main {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.source-option-number {
+  font-weight: 600;
+}
+
+.source-option-customer,
+.source-option-folder {
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-option.selected .source-option-customer,
+.source-option.selected .source-option-folder {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.source-empty {
+  padding: 12px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* Wide enough to show a customer folder beside a spec number, which is the
+   only thing that tells two same-numbered specs apart. */
+.modal-wide {
+  width: 560px;
+}
+
+/* A refusal, not a hint: it says why Create is disabled, so it has to read
+   differently from the line it replaces. */
+.modal-conflict {
+  font-size: 11px;
+  color: var(--error);
+  line-height: 1.45;
+}
+
+.modal-field input.conflict {
+  border-color: var(--error);
+}
+
+.modal-actions button.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* The grid's refresh indicator. Always in the DOM and reserving its own

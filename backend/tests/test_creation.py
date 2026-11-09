@@ -1,6 +1,12 @@
 import pytest
 
-from cobalt.creation import CreationError, create_blank_spec, duplicate_spec
+from cobalt.creation import (
+    CreationError,
+    create_blank_spec,
+    duplicate_spec,
+    find_number_conflicts,
+    normalize_spec_number,
+)
 from cobalt.docx_sections import parse_document
 
 from .fixtures.builder import build_sample_spec_docx
@@ -139,3 +145,59 @@ def test_creation_refuses_rather_than_produce_a_spec_with_the_wrong_number(tmp_p
     dest = tmp_path / "new.docx"
     with pytest.raises(CreationError, match="spec-number field"):
         duplicate_spec(str(source), str(dest), "EG9003", "ACME", "Isaac")
+
+
+# --- The spec-number guardrail -------------------------------------------
+#
+# A quality engineer typed a six-character number that another spec in the
+# same folder already carried, and nothing stopped it. Two documents
+# answering to one number is cheap to prevent here and expensive to unpick
+# later, so the number is checked before anything is written.
+
+
+@pytest.mark.parametrize(
+    "stored,typed,same",
+    [
+        ("EG1001", "EG1001", True),
+        ("EG1001", "eg1001", True),  # case is how it gets typed, not how specs differ
+        ("EG1001", "  EG1001  ", True),
+        ("EG 1001", "EG  1001", True),  # a number wrapped across a line in the table
+        ("EG1001", "EG1002", False),
+        ("EG1001", "EG10010", False),  # a prefix is not a match
+        ("EG1001", "", False),  # nothing typed yet blocks nothing
+    ],
+)
+def test_which_spec_numbers_count_as_the_same_number(stored, typed, same):
+    conflicts = find_number_conflicts([("/vault/a.docx", stored)], typed)
+    assert conflicts == (["/vault/a.docx"] if same else [])
+
+
+def test_an_unreadable_spec_contributes_no_number():
+    """A spec that failed to parse has no number to collide with, and must
+    not block a number on the strength of having none."""
+    assert find_number_conflicts([("/vault/broken.docx", None)], "EG1001") == []
+
+
+def test_every_holder_of_a_number_is_named_not_just_the_first():
+    """Nothing stopped duplicates before this guard existed, so a library
+    can already hold the same number twice. Reporting one of them would
+    send someone to fix half a problem."""
+    conflicts = find_number_conflicts(
+        [
+            ("/vault/Wrigley/EG1000.docx", "EG1000"),
+            ("/vault/General Mills/EG1000.docx", "EG1000"),
+            ("/vault/Wrigley/EG1001.docx", "EG1001"),
+        ],
+        "EG1000",
+    )
+    assert conflicts == ["/vault/Wrigley/EG1000.docx", "/vault/General Mills/EG1000.docx"]
+
+
+def test_normalize_matches_what_the_browser_does():
+    """The Create button is disabled by the browser's copy of this rule and
+    the server refuses by this one. They have to agree about what the same
+    number is, or the button and the server disagree about what can be
+    created. These are the cases the browser harness checks too."""
+    assert normalize_spec_number(" eg1001 ") == "EG1001"
+    assert normalize_spec_number("EG\n1001") == "EG 1001"
+    assert normalize_spec_number(None) == ""

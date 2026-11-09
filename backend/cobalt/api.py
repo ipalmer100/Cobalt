@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from .audit_log import append_entry, read_entries
-from .creation import CreationError, create_blank_spec, duplicate_spec
+from .creation import CreationError, create_blank_spec, duplicate_spec, find_number_conflicts
 from .docx_sections import (
     ALL_SECTIONS,
     CATEGORY_LABELS,
@@ -93,6 +93,41 @@ def _require_within_vault(vault: Vault, path: str) -> None:
     root = Path(vault.root)
     if root not in resolved.parents and resolved != root:
         raise HTTPException(status_code=400, detail=f"Path must be inside the open vault ({vault.root})")
+
+
+def _require_spec_number_unused(vault: Vault, spec_number: str) -> None:
+    """No two specs in the open folder may claim the same number.
+
+    A spec number is the document's identity -- it is how a revision gets
+    requested, how a complaint gets traced, and what a purchase order
+    quotes. Two documents answering to one number is the kind of mistake
+    that is cheap to prevent at creation and expensive to find months
+    later, so creating one is refused outright rather than warned about.
+
+    Scoped to the open folder and everything beneath it, which is the scope
+    the app was pointed at: a plant's library knows its own numbers and has
+    no way to see another plant's. Checked server-side as well as in the
+    browser because the browser's copy of the index can be seconds stale,
+    and two people creating the same number at once would both see a clear
+    field.
+    """
+    conflicts = find_number_conflicts(
+        ((entry.path, entry.spec.spec_number if entry.spec else None) for entry in vault.entries()),
+        spec_number,
+    )
+    if not conflicts:
+        return
+    root = Path(vault.root)
+    where = ", ".join(str(Path(p).relative_to(root)) for p in sorted(conflicts)[:3])
+    if len(conflicts) > 3:
+        where += f", and {len(conflicts) - 3} more"
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f'Spec number "{spec_number.strip()}" is already used in this folder by {where}. '
+            "Choose a different number, or open the existing spec if you meant to revise it."
+        ),
+    )
 
 
 _REVISION_LOCK_MESSAGE = (
@@ -693,6 +728,7 @@ def post_duplicate_spec(req: DuplicateSpecRequest) -> dict:
     vault = _vault()
     _require_within_vault(vault, req.source_path)
     _require_within_vault(vault, req.dest_path)
+    _require_spec_number_unused(vault, req.spec_number)
     try:
         spec = duplicate_spec(req.source_path, req.dest_path, req.spec_number, req.customer, req.who)
     except CreationError as exc:
@@ -714,6 +750,7 @@ def post_duplicate_spec(req: DuplicateSpecRequest) -> dict:
 def post_create_blank_spec(req: CreateBlankSpecRequest) -> dict:
     vault = _vault()
     _require_within_vault(vault, req.dest_path)
+    _require_spec_number_unused(vault, req.spec_number)
     try:
         spec = create_blank_spec(req.dest_path, req.spec_number, req.customer, req.who)
     except CreationError as exc:

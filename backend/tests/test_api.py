@@ -641,3 +641,92 @@ def test_commit_across_specs_logs_one_audit_entry_each(client, tmp_path):
     assert all(e["revision_text"] == "Standardised supplier." for e in commits)
     # the before-value is captured, so the log says what changed *from*
     assert all(c["old_value"] is not None for e in commits for c in e["edits"])
+
+
+# --- The spec-number guardrail, end to end -------------------------------
+
+
+def test_duplicate_refuses_a_spec_number_already_in_the_vault(client, tmp_path):
+    """The reported bug: a number another spec already carried was accepted
+    and a second document went out claiming it."""
+    source = str(tmp_path / "source.docx")
+    build_sample_spec_docx(source, spec_number="EG1001")
+    build_sample_spec_docx(str(tmp_path / "other.docx"), spec_number="EG1002")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    dest = str(tmp_path / "copy.docx")
+    r = client.post(
+        "/spec/duplicate",
+        json={
+            "source_path": source,
+            "dest_path": dest,
+            "spec_number": "EG1002",
+            "customer": "New Co",
+            "who": "Isaac",
+        },
+    )
+    assert r.status_code == 409
+    assert "EG1002" in r.json()["detail"]
+    assert "other.docx" in r.json()["detail"]
+    # Refused before anything was written, not cleaned up afterwards.
+    assert not Path(dest).exists()
+
+
+def test_blank_creation_refuses_a_spec_number_already_in_the_vault(client, tmp_path):
+    build_sample_spec_docx(str(tmp_path / "taken.docx"), spec_number="EG1003")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    dest = str(tmp_path / "fresh.docx")
+    r = client.post(
+        "/spec/create-blank",
+        json={"dest_path": dest, "spec_number": "eg1003", "customer": "New Co", "who": "Isaac"},
+    )
+    assert r.status_code == 409
+    assert not Path(dest).exists()
+
+
+def test_the_guardrail_reaches_into_subfolders(client, tmp_path):
+    """Scoped to the folder that was opened and everything beneath it --
+    that is the scope the app was pointed at, and a library is organised by
+    customer subfolder."""
+    (tmp_path / "Wrigley").mkdir()
+    build_sample_spec_docx(str(tmp_path / "Wrigley" / "EG1004.docx"), spec_number="EG1004")
+    source = str(tmp_path / "source.docx")
+    build_sample_spec_docx(source, spec_number="EG1000")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/duplicate",
+        json={
+            "source_path": source,
+            "dest_path": str(tmp_path / "General Mills" / "EG1004.docx"),
+            "spec_number": "EG1004",
+            "customer": "New Co",
+            "who": "Isaac",
+        },
+    )
+    assert r.status_code == 409
+    detail = r.json()["detail"]
+    # Named relative to the vault, so it points at a folder the user knows.
+    assert "Wrigley" in detail and str(tmp_path) not in detail
+
+
+def test_an_unused_number_still_creates(client, tmp_path):
+    """The guard has to let the normal case through -- a number close to an
+    existing one is not the existing one."""
+    source = str(tmp_path / "source.docx")
+    build_sample_spec_docx(source, spec_number="EG1005")
+    client.post("/vault/open", json={"root": str(tmp_path)})
+
+    r = client.post(
+        "/spec/duplicate",
+        json={
+            "source_path": source,
+            "dest_path": str(tmp_path / "EG10050.docx"),
+            "spec_number": "EG10050",
+            "customer": "New Co",
+            "who": "Isaac",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["spec_number"] == "EG10050"
