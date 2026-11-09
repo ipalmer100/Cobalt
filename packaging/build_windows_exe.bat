@@ -181,17 +181,73 @@ echo   See "Running it on a managed PC" in packaging\README.md.
 
 :built
 echo.
+echo === Packing it for release ===
+rem Zipped here rather than left to whoever shares it. A GitHub release
+rem takes files, not folders, and the exe does not work moved out of its
+rem folder on its own -- so "zip the whole folder" was an instruction that
+rem had to be followed correctly every time by someone who had no way to
+rem tell they had got it wrong. The asset name carries no version on
+rem purpose: a fixed name is what lets
+rem releases/latest/download/Cobalt-windows.zip always resolve.
+set "RELEASE_ZIP=packaging\dist\Cobalt-windows.zip"
+if exist "%RELEASE_ZIP%" del /q "%RELEASE_ZIP%"
+pushd packaging\dist
+rem tar.exe ships with Windows 10 1803+ and is much faster than
+rem Compress-Archive over the thousands of small files in _internal. The
+rem zip format is named explicitly rather than inferred from the .zip
+rem extension: a wrong inference would write a tar under a .zip name, which
+rem succeeds, reports nothing, and only fails for whoever downloads it.
+where tar.exe >nul 2>nul
+if errorlevel 1 goto :zip_powershell
+tar.exe -c -f Cobalt-windows.zip --format zip Cobalt
+if errorlevel 1 goto :zip_powershell
+call :verify_zip
+if not errorlevel 1 goto :zipped
+
+:zip_powershell
+echo   Falling back to Compress-Archive - this is slower.
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference='Stop'; Compress-Archive -Path 'Cobalt' -DestinationPath 'Cobalt-windows.zip' -Force"
+call :verify_zip
+if errorlevel 1 goto :zip_failed
+
+:zipped
+popd
+if not exist "%RELEASE_ZIP%" goto :error_zip
+
+echo.
 echo ============================================================
 echo  Done. The app is at: packaging\dist\Cobalt\
 echo.
 echo  Double-click Cobalt.exe inside that folder to run it.
-echo  To share it, zip the whole Cobalt folder - not just the exe -
-echo  and have the recipient unzip it before running.
+echo.
+echo  To publish it, attach this one file to a GitHub release:
+echo.
+echo      %RELEASE_ZIP%
+echo.
+echo  It unzips to a Cobalt folder with the exe inside, which is
+echo  the only arrangement that runs. See RELEASING.md.
 echo.
 echo  For a Desktop shortcut that avoids the exe entirely:
 echo      packaging\create_shortcut.bat
 echo ============================================================
 goto :end
+
+:zip_failed
+popd
+goto :error_zip
+
+rem A subroutine rather than a jump target: reached by `call`, and returns
+rem to the line after it. Confirms the file really is a readable zip with
+rem something in it, which is the part that cannot be assumed -- a writer
+rem that produced the wrong format still exits 0.
+:verify_zip
+powershell -NoProfile -ExecutionPolicy Bypass -Command ^
+  "try { Add-Type -AssemblyName System.IO.Compression.FileSystem;" ^
+  "$z = [IO.Compression.ZipFile]::OpenRead((Resolve-Path 'Cobalt-windows.zip'));" ^
+  "$n = $z.Entries.Count; $z.Dispose();" ^
+  "if ($n -lt 1) { exit 1 } else { exit 0 } } catch { exit 1 }"
+goto :eof
 
 :missing
 echo.
@@ -272,6 +328,21 @@ echo PyInstaller failed to build the app.
 echo.
 echo If this mentions a missing module, note the name and report it -
 echo it likely needs adding to hiddenimports in packaging\cobalt.spec.
+echo.
+exit /b 1
+
+:error_zip
+echo.
+echo The app was built, but could not be zipped for release.
+echo.
+echo The app itself is fine and runs from:
+echo.
+echo     packaging\dist\Cobalt\
+echo.
+echo Zip that folder by hand instead - right-click it, Send to,
+echo Compressed (zipped) folder - and attach the result to the release.
+echo Zip the FOLDER, not the exe inside it: the exe does not run on its
+echo own, it needs its _internal sibling.
 echo.
 exit /b 1
 

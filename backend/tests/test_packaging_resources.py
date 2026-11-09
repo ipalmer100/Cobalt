@@ -279,3 +279,59 @@ def test_the_installer_looks_for_the_folder_github_actually_produces():
     assert 'set "BRANCH=main"' in text
     repo_name = "ipalmer100/Cobalt".split("/")[1]
     assert f'set "SRC=%WORK%\\{repo_name}-%BRANCH%"' in text
+
+
+# --- Publishing the built app --------------------------------------------
+
+
+def test_the_build_leaves_one_file_ready_to_attach_to_a_release():
+    """A GitHub release takes files, not folders, and the exe does not run
+    moved out of its folder on its own. "Zip the whole folder" was an
+    instruction that had to be followed correctly every time by someone with
+    no way to tell they had got it wrong, so the build does it."""
+    build = (PACKAGING / "build_windows_exe.bat").read_text()
+    assert "Cobalt-windows.zip" in build
+    # The folder, not the exe: unzipping has to produce the arrangement
+    # that runs.
+    assert "--format zip Cobalt" in build
+    # And the zip is checked, because a writer that produced the wrong
+    # format still exits 0.
+    assert ":verify_zip" in build and "ZipFile" in build
+
+
+def test_the_release_asset_name_carries_no_version():
+    """releases/latest/download/<name> only resolves if <name> is the same
+    on every release. A version in the filename means every link already
+    sent out points at an old release forever."""
+    build = (PACKAGING / "build_windows_exe.bat").read_text()
+    import re
+
+    for name in re.findall(r"Cobalt[\w.-]*\.zip", build):
+        assert not re.search(r"\d+\.\d+", name), f"{name} pins a version into the asset name"
+
+
+def test_the_built_app_cannot_be_committed_by_accident():
+    """57 MB of binary per release, and Git keeps every version forever.
+    Ignored rather than merely discouraged -- which also means `git add
+    packaging/dist` appears to work and silently does nothing, so the
+    reason is written down where someone confused by that will find it."""
+    ignore = (REPO / ".gitignore").read_text()
+    assert "packaging/dist/" in ignore
+    assert "packaging/build/" in ignore
+    # Read as one line: Markdown wraps, so a phrase being checked for can
+    # fall across a line break and still be present to a reader.
+    guide = " ".join((REPO / "RELEASING.md").read_text().split())
+    assert "silently does nothing" in guide, "the surprising part has to be explained"
+
+
+def test_the_release_guide_covers_both_assets_and_signing():
+    """The two files serve different people, and a release missing either
+    one breaks a link that has already been emailed."""
+    guide = " ".join((REPO / "RELEASING.md").read_text().split())
+    for asset in ("Cobalt-windows.zip", "install_cobalt.bat"):
+        assert asset in guide
+        assert f"releases/latest/download/{asset}" in guide
+    # Signing is a certificate decision, not a code change, and the
+    # certificate belongs to the company rather than to a person.
+    assert "COBALT_SIGN_THUMBPRINT" in guide
+    assert "not to a person" in guide
