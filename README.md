@@ -19,7 +19,9 @@ specs already live on.
 
 ## Install it
 
-**[⬇ Download `install_cobalt.bat`](https://github.com/ipalmer100/Cobalt/releases/latest/download/install_cobalt.bat)** — then double-click it.
+**[Open `install_cobalt.bat`](https://github.com/ipalmer100/Cobalt/blob/main/install_cobalt.bat)**,
+click the **⤓ download** button at the top right of the file, and
+double-click the file you get.
 
 That is the whole install. No Git, no clone, no terminal, no administrator
 rights. It downloads the current Cobalt, sets it up, and puts a **Cobalt**
@@ -42,10 +44,27 @@ of thousands of small files that would be uploaded one at a time. Your spec
 files are never touched: they stay in their own folder, which the installer
 does not go near.
 
-> If the download link 404s, the release has not been cut yet — take the
-> file straight from the repo instead: open
-> [`install_cobalt.bat`](install_cobalt.bat) and use GitHub's **Download raw
-> file** button (the ⤓ icon, top right of the file view).
+### A link you can send someone
+
+Once a release is cut with `install_cobalt.bat` attached to it, this URL
+always serves the newest copy and downloads in a single click, so it can go
+straight into an email:
+
+```
+https://github.com/ipalmer100/Cobalt/releases/latest/download/install_cobalt.bat
+```
+
+GitHub serves files from the repository itself as `text/plain`, which is
+why the route above needs the download button — the browser would otherwise
+show the file instead of saving it. A release asset is the only form that
+downloads on one click.
+
+To cut one: **Releases** → **Draft a new release** → tag `v0.1.0`, target
+`main` → drag `install_cobalt.bat` into the attachments box → **Publish
+release**. Re-attach the file on each later release and the link above
+follows it.
+
+### What this is not
 
 This gives you the run-from-source install. **`Cobalt.exe` is built
 separately** and that process is unchanged — see
