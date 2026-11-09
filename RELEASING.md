@@ -1,14 +1,22 @@
 # Publishing a Cobalt release
 
-Two files go out with every release, and they serve two different people:
+Two files go out with every release:
 
-| File | Who it is for | Needs on their machine |
+| File | What it is | Needs on their machine |
 | --- | --- | --- |
-| `Cobalt-windows.zip` | Anyone who just wants to run Cobalt | Nothing |
-| `install_cobalt.bat` | Anyone who wants it to update itself later | Python 3.11+, Node 20+ |
+| `Cobalt-windows.zip` | The built app | Nothing |
+| `install_cobalt.bat` | Downloads and installs that zip | Nothing |
 
 Both attach to the same GitHub release, and both then have a permanent
 "always the newest" URL you can put in an email.
+
+> **Attach both, every time.** `install_cobalt.bat` downloads
+> `Cobalt-windows.zip` from
+> `releases/latest/download/`. A release published without the zip makes
+> the installer report that no release exists — on every machine, including
+> ones that already had Cobalt working. The installer says exactly that
+> rather than "download failed", so the symptom is at least legible, but
+> the fix is to attach the file.
 
 ---
 
@@ -144,21 +152,20 @@ signing anything with it.
 ## A description to start from
 
 ```markdown
-## Which file do I want?
+## Installing
 
-**Just want to run Cobalt?** Download `Cobalt-windows.zip`, unzip it
-anywhere, and double-click `Cobalt.exe` inside the `Cobalt` folder.
-Nothing else to install. Keep the folder together — the exe does not run
-on its own.
+Download **`install_cobalt.bat`** below and double-click it. That is the
+whole install — nothing else to set up, and no administrator rights. It
+puts Cobalt in your user folder, adds a **Cobalt** shortcut to your
+Desktop, and offers to start it. Run the same file again any time to
+update to the newest version.
 
-**Want it to update itself later?** Download `install_cobalt.bat` and
-double-click it instead. It installs Cobalt and puts a shortcut on your
-Desktop, and running it again updates to the newest version. It needs
-Python 3.11+ and Node.js 20+ on the machine.
+Then: start Cobalt, click **Browse…**, and pick your folder of spec files.
+Your specs are never moved or copied — Cobalt edits them where they are.
 
-Either way: start Cobalt, click **Browse…**, and pick your folder of spec
-files. Your specs are never moved or copied — Cobalt edits them where they
-are.
+`Cobalt-windows.zip` is the app itself, if you would rather place it by
+hand or put it on a share. Unzip it and double-click `Cobalt.exe` inside
+the `Cobalt` folder, keeping the folder together.
 
 ## What changed
 

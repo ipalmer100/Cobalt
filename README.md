@@ -19,54 +19,50 @@ specs already live on.
 
 ## Get it
 
-Everything is on the **[Releases
-page](https://github.com/ipalmer100/Cobalt/releases/latest)**. Two files,
-for two different people:
+**[⬇ `install_cobalt.bat`](https://github.com/ipalmer100/Cobalt/releases/latest/download/install_cobalt.bat)**
+— download it and double-click it. That is the whole install.
 
-### `Cobalt-windows.zip` — nothing to install
+No Python, no Node.js, no Git, no terminal, no administrator rights. It
+downloads the current build of Cobalt, puts it in `%LOCALAPPDATA%\Cobalt`,
+adds a **Cobalt** shortcut to your Desktop, and offers to start it. Run the
+same file again any time to update.
 
-```
-https://github.com/ipalmer100/Cobalt/releases/latest/download/Cobalt-windows.zip
-```
+Everything else is on the **[Releases
+page](https://github.com/ipalmer100/Cobalt/releases/latest)**:
 
-Unzip it anywhere and double-click **`Cobalt.exe`** inside the `Cobalt`
-folder. No Python, no Node, no terminal, no administrator rights.
+| File | Use it when |
+| --- | --- |
+| `install_cobalt.bat` | Normally. It installs and updates Cobalt for you. |
+| `Cobalt-windows.zip` | You want the app folder itself — to put on a share, or to install somewhere the installer cannot reach. Unzip and double-click `Cobalt.exe` inside. |
 
-Keep the folder together — `Cobalt.exe` does not run if you move it out on
-its own, it needs the `_internal` folder beside it.
-
-### `install_cobalt.bat` — installs and updates itself
+Both URLs always resolve to the newest release, so they are safe to paste
+into an email:
 
 ```
 https://github.com/ipalmer100/Cobalt/releases/latest/download/install_cobalt.bat
+https://github.com/ipalmer100/Cobalt/releases/latest/download/Cobalt-windows.zip
 ```
 
-Double-click it. It fetches the current Cobalt, sets it up, and puts a
-**Cobalt** shortcut on your Desktop. Run the same file again any time to
-update. Choose this one if you expect to update often and would rather not
-re-download a zip each time.
+A few things worth knowing either way:
 
-It needs two things already on the machine, and says so before downloading
-anything:
+- **Keep the app folder together.** `Cobalt.exe` does not run if you move
+  it out on its own — it needs the `_internal` folder beside it. The
+  installer handles this; a manual copy is where it goes wrong.
+- **`%LOCALAPPDATA%` is deliberate**, not the Desktop or Documents. Those
+  are OneDrive-synced here, and the app is several thousand files that
+  would be uploaded one at a time.
+- **Your spec files are never touched.** They stay in their own folder,
+  which neither route goes near.
+- **On a managed PC, Windows may refuse a newly-built unsigned
+  executable.** The installer clears the downloaded-from-the-internet mark
+  that causes the SmartScreen prompt, but Defender's
+  attack-surface-reduction rules and AppLocker are separate and need IT.
+  The symptoms look similar and the fixes are not; the table in
+  [`packaging/README.md`](packaging/README.md#running-it-on-a-managed-pc)
+  tells them apart, and running Cobalt from source avoids the executable
+  entirely.
 
-- **Python 3.11+** — https://www.python.org/downloads/ (tick *Add python.exe
-  to PATH*)
-- **Node.js 20+** — https://nodejs.org/ (LTS)
-
-Both install per-user without admin rights, though a managed laptop may
-need IT to approve them. It installs to `%LOCALAPPDATA%\Cobalt` —
-deliberately not the Desktop or Documents, which are OneDrive-synced here,
-and an install folder holds tens of thousands of small files that would be
-uploaded one at a time.
-
-Either way, your spec files are never touched: they stay in their own
-folder, which neither route goes near.
-
-> Those two URLs always resolve to the newest release, so they are safe to
-> paste into an email. A file served from the repository itself does not
-> download on one click — GitHub sends it as `text/plain` and the browser
-> displays it — which is why both are attached to the release.
-> Publishing one is [`RELEASING.md`](RELEASING.md).
+Publishing a release is [`RELEASING.md`](RELEASING.md).
 
 ---
 

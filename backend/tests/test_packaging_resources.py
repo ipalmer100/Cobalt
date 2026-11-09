@@ -193,92 +193,113 @@ def test_the_build_can_sign_but_does_not_require_it():
 # --- The browser-only installer ------------------------------------------
 # install_cobalt.bat is the one file a user downloads by itself, from a
 # GitHub page, and double-clicks. Nothing around it can be assumed: no
-# clone, no repo, no terminal, and no second chance to read an error
-# message that scrolled past before the window closed.
+# clone, no repo, no Python, no terminal, and no second chance to read an
+# error message that scrolled past before the window closed.
 
 
-def test_the_installer_downloads_the_repository_it_lives_in():
-    """A hardcoded owner/repo in a file people download and keep is the one
-    thing in it that silently rots -- it would quietly install someone
-    else's project, or nothing at all."""
+def test_the_installer_fetches_the_released_build():
+    """It installs the published application rather than building one. That
+    is what lets it need nothing on the machine -- Cobalt.exe carries its
+    own Python -- and it is why the URL has to be the release asset and not
+    a source download."""
     text = INSTALLER.read_text()
     assert "ipalmer100/Cobalt" in text
-    assert "codeload.github.com" in text, "needs a direct zip URL, not a git clone"
-    assert "git clone" not in text, "the whole point is that Git is not required"
+    assert "releases/latest/download" in text, "must follow the latest release, not a fixed tag"
+    assert "Cobalt-windows.zip" in text
+    # Nothing is built here any more.
+    for gone in ("git clone", "npm install", "npm run build", ".build-venv", "pip install"):
+        assert gone not in text, f"{gone!r} is left over from the build-from-source installer"
 
 
-def test_the_installer_builds_the_environment_the_launcher_expects():
-    """It sets up what run_cobalt.bat then starts. If the two disagree about
-    where the virtualenv lives, the install finishes and the shortcut fails
-    -- the worst order for those two events."""
+def test_the_installer_asks_for_the_asset_the_build_produces():
+    """Two files written months apart have to agree on one name, and the
+    failure if they do not is a 404 on a release that is perfectly fine."""
     installer = INSTALLER.read_text()
-    launcher = (PACKAGING / "run_cobalt.bat").read_text()
     build = (PACKAGING / "build_windows_exe.bat").read_text()
-
-    assert "packaging\\.build-venv" in installer
-    assert "packaging\\.build-venv" in launcher
-    # Same stamp file the build writes, so a venv made by either is
-    # recognised (and rebuilt if the folder moved) by the other.
-    assert ".built-at" in installer and ".built-at" in build
-    # And the frontend run_cobalt.bat refuses to start without.
-    assert "npm run build" in installer
+    asset = "Cobalt-windows.zip"
+    assert f'set "ASSET={asset}"' in installer
+    assert asset in build
 
 
-def test_the_installer_does_not_claim_to_build_the_exe():
-    """The packaged executable is still built by build_windows_exe.bat on a
-    Windows machine. Someone who ran this and expected an .exe would go
-    looking for one that was never made."""
+def test_the_installer_checks_what_it_unpacked_before_installing_it():
+    """Cobalt.exe does not run moved out of its folder -- it needs the
+    _internal sibling. A zip that unpacked to anything else is not
+    installable and must not be put in place."""
     text = INSTALLER.read_text()
-    assert "build_windows_exe.bat" in text, "it has to say where the exe comes from"
-    assert "pyinstaller" not in text.lower()
+    assert 'set "SRC=%WORK%\\Cobalt"' in text
+    assert "%SRC%\\Cobalt.exe" in text
+    assert "%SRC%\\_internal" in text
 
 
-@pytest.mark.parametrize("marker", ["exit /b 1", "goto :end"])
-def test_every_way_out_of_the_installer_waits_for_the_user(marker):
+def test_the_installer_tells_a_missing_release_apart_from_a_broken_network():
+    """404 means nobody has published a build yet, which is not a problem
+    with the machine and nothing the user does will fix. Reporting that as
+    "download failed" sends them to IT over something IT cannot help with."""
+    text = INSTALLER.read_text()
+    assert '"%HTTP%"=="404" goto :no_release' in text
+    assert ":no_release" in text
+    assert "no published release" in " ".join(text.split())
+
+
+def test_the_installer_verifies_the_download_is_really_a_zip():
+    """An HTTP error page or a proxy sign-in page saves to disk perfectly
+    happily, so the file existing proves nothing."""
+    text = INSTALLER.read_text()
+    assert ":verify_zip" in text and "ZipFile" in text
+    assert "call :verify_zip" in text
+
+
+def test_the_installer_only_clears_the_mark_of_the_web():
+    """Unblock-File removes the downloaded-from-the-internet tag that makes
+    SmartScreen interrupt the first launch -- the same thing the Unblock
+    button on a file's Properties page does. It must not be sold as more
+    than that: Defender, its ASR rules and AppLocker do not look at that
+    tag, and if one of those is the blocker the answer is a signature or an
+    allow-list entry."""
+    text = " ".join(INSTALLER.read_text().split())
+    assert "Unblock-File" in text
+    assert "not a way around anything else" in text
+    for control in ("Defender", "AppLocker"):
+        assert control in text
+    # Nothing that actually weakens a control.
+    for forbidden in ("Set-MpPreference", "ExclusionPath", "DisableRealtimeMonitoring", "netsh advfirewall"):
+        assert forbidden not in text
+
+
+def test_the_installer_says_what_to_do_when_windows_refuses_the_exe():
+    """The trade this installer makes: it needs nothing, but it installs an
+    executable, and a managed machine may refuse a new unsigned one. That
+    happens on first launch, after this script is done, so it cannot be
+    detected here -- only answered in advance."""
+    text = " ".join(INSTALLER.read_text().split())
+    assert "packaging\\README.md" in text, "the from-source route has to be pointed at"
+    assert "SmartScreen" in text and "AppLocker" in text
+
+
+def test_every_failure_path_waits_for_the_user():
     """Double-clicked from Explorer, the console window closes the instant
-    the script ends. Without a pause before each exit the user sees a window
-    flash and nothing else -- including on every failure path, which are the
-    ones that have something to say."""
+    the script ends. Without a pause the user sees a window flash and
+    nothing else -- and the failure paths are the ones with something to
+    say."""
     lines = [line.strip().lower() for line in _lines("install_cobalt.bat")]
-    for index, line in enumerate(lines):
-        if line != marker:
-            continue
-        earlier = [l for l in lines[:index] if l and not l.startswith("rem ")]
+    exits = [i for i, line in enumerate(lines) if line == "exit /b 1"]
+    assert exits, "no failure exits found -- this test would pass vacuously"
+    for index in exits:
+        earlier = [l for l in lines[:index] if l and not l.startswith("rem")]
         assert earlier and earlier[-1] == "pause", (
-            f"'{marker}' at line {index + 1} is not preceded by a pause; "
+            f"'exit /b 1' at line {index + 1} is not preceded by a pause; "
             f"the line above it is {earlier[-1] if earlier else '(nothing)'!r}"
         )
 
 
-def test_the_installer_checks_prerequisites_before_downloading():
-    """Forty megabytes and a four-minute npm install are a long way to go to
-    find out Python is missing."""
-    lines = [line.strip().lower() for line in _lines("install_cobalt.bat")]
-    first_check = min(i for i, line in enumerate(lines) if line.startswith("where py "))
-    first_download = min(i for i, line in enumerate(lines) if "codeload.github.com" in line)
-    assert first_check < first_download
-
-
-def test_the_installer_keeps_a_bundled_libreoffice_across_updates():
-    """Not in the download, 400 MB, and put there by hand so .doc
-    conversion works on a machine with nothing installed. An update that
-    deletes it costs someone an afternoon they already spent."""
+def test_the_successful_path_ends_by_asking_rather_than_closing():
+    """The success path does not need a pause -- it needs the user to
+    answer something, which keeps the window up and does the obvious next
+    thing in one keystroke."""
     text = INSTALLER.read_text()
-    assert "packaging\\libreoffice" in text
-    assert "KEEP_LO" in text
+    assert "choice /c yn" in text
+    assert 'start "" "%TARGET%\\Cobalt.exe"' in text
 
-
-def test_the_installer_looks_for_the_folder_github_actually_produces():
-    """A codeload zip unpacks to <repo>-<branch>, so the folder the script
-    then moves into place is derived from the same two values as the URL.
-    Verified by hand against the real download: the zip's single top-level
-    folder is Cobalt-main. Spelling it out anywhere else means a rename
-    breaks the install after the download rather than before it."""
-    text = INSTALLER.read_text()
-    assert 'set "REPO=ipalmer100/Cobalt"' in text
-    assert 'set "BRANCH=main"' in text
-    repo_name = "ipalmer100/Cobalt".split("/")[1]
-    assert f'set "SRC=%WORK%\\{repo_name}-%BRANCH%"' in text
 
 
 # --- Publishing the built app --------------------------------------------
