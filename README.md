@@ -19,16 +19,15 @@ specs already live on.
 
 ## Get it
 
-**[⬇ `install_cobalt.bat`](https://github.com/ipalmer100/Cobalt/releases/latest/download/install_cobalt.bat)**
-— download it and double-click it. That is the whole install.
+**[⬇ `install_cobalt.bat`](https://github.com/ipalmer100/Cobalt/releases/latest)**
+— download "install_cobalt.bat" and double-click it.
 
 No Python, no Node.js, no Git, no terminal, no administrator rights. It
 downloads the current build of Cobalt, puts it in `%LOCALAPPDATA%\Cobalt`,
 adds a **Cobalt** shortcut to your Desktop, and offers to start it. Run the
 same file again any time to update.
 
-Everything else is on the **[Releases
-page](https://github.com/ipalmer100/Cobalt/releases/latest)**:
+Everything else is on the releases page.
 
 | File | Use it when |
 | --- | --- |
