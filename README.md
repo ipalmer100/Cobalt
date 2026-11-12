@@ -6,7 +6,7 @@ without opening them one at a time.**
 Point Cobalt at a folder of customer spec `.docx` files — a plant's
 library, a customer's folder, a whole division's archive — and everything
 inside it, however deeply nested, is indexed and live. Change a material
-across 200 specs from one grid instead of opening 200 Word documents.
+across hundreds of specs, or even thousands, from one grid instead of opening Word docs individually.
 Nothing is imported, exported or converted into a database: the `.docx`
 files on the network drive stay the originals, and Cobalt edits them in
 place.
